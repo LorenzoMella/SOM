@@ -2,7 +2,7 @@
 #        SOM - Batch Map version            #
 #                                           #
 #        Author: Lorenzo Mella              #
-#        Version: 2017-11-30                #
+#        Version: 2017-12-12                #
 #    Tested on: Python 3.6.3/numpy 1.13.3   #
 #===========================================#
 
@@ -32,16 +32,25 @@ W = np.random.randn(param_shape)
 # (height, width, fan_in)
 # np.dot(x[n,:] - w[i,j,:], x[n,:] - w[i,j,:])
 
-diff = X.T - W[:,:,:,np.newaxis]
-sq_distances = batch_dot(diff, diff)
+def sq_distances_v(X, W):
+    diff = X.T - W[:,:,:,np.newaxis]
+    return batch_dot(diff, diff)
 
 # The same behavior should arise from the more elementary code:
-sq_distances = np.empty(shape=(height, width, X.shape[0]), dtype=np.float64)
-for i in range(height):
-    for j in range(width):
-        # This last loop can be shortened as a matrix product
-        for n in range(X.shape[0]):
-            sq_distances[i,j,n] = np.dot(X[n,:], W[i,j,:])
+def sq_distances_e(X, W):
+    height, width = W.shape[:2]
+    max_samples = X.shape[0]
+    sq_distances = np.empty(shape=(height, width, max_samples, dtype=np.float64)
+    for i in range(height):
+        for j in range(width):
+            # This last loop can be shortened as a matrix product
+            for n in range(max_samples):
+                sq_distances[i,j,n] = np.dot(X[n,:], W[i,j,:])
+    return sq_distances
+
+
+def voronoi_cells(X, W):
+    raise NotImplementedError
 
 # Then we assign neurons to Voronoi Cells. To do this we build a mask of
 # argmins. For each neuron it tells (with a 1-in-K encoding) whether its

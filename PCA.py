@@ -93,7 +93,7 @@ def experiment1():
 
 
 def experiment2():
-    max_fan_in = 28*28+3
+    max_fan_in = 28*28+3    # Doesn't make much sense
     max_samples = 60000
     for fan_in in range(2, max_fan_in, 50):
         X = np.random.randn(max_samples, fan_in)
