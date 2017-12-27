@@ -16,7 +16,7 @@ from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
 import SOM_data_providers as dp
 
-# Use the new process timers from Python version 3.3
+# Use the new process timers if Python version >= 3.3
 py_version, py_subversion = sys.version_info[0:2]
 if py_version == 3 and py_subversion >= 3:
     timer = time.process_time
@@ -61,19 +61,6 @@ def batch_dot(a, b):
     """
     assert a.shape == b.shape
     return np.sum(a*b, axis=-1)
-
-
-# Stacks an array with itself multiple times along the last axis
-# DEPRECATED: BROADCASTING RULES ARE MORE THAN ENOUGH
-# def tile_on_last_axis(arr, last_axis_size):
-#     # Create axes multipliers: (1, 1, ..., 1, last_axis_size) for np.tile
-#     multipliers = np.append(np.ones(arr.ndim, dtype=np.int), last_axis_size)
-#     # New shape has last_axis_size added preliminarily as next to last size
-#     new_shape = np.insert(arr.shape, -1, last_axis_size)
-#     # Tile the array according to multipliers. Shape and ordering is still wrong
-#     extended_arr = np.tile(arr, multipliers)
-#     # Reshape and permute axes correctly
-#     return extended_arr.reshape(new_shape).swapaxes(-2,-1)
 
 
 def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
