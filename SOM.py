@@ -32,8 +32,8 @@ np.random.seed(123)
 ############################################
 
 # Lattice size
-height = 40
-width = 40
+height = 50
+width = 50
 
 # Initial values of exponentially decreasing parameters
 eta_i = 0.5
@@ -84,7 +84,7 @@ def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     #   W_new[i,j,:] = W_new[i,j,:] = eta*h[i,j]*(sample_x - W[i,j,fan_in])
     W_new = W + eta * h[:,:,np.newaxis] * (sample_x - W)
     # NORMALIZATION HERE PRODUCES INTERESTING RESULTS BUT CONFINES
-    # THE PROTOTYPES ON AN K-1-DIM SPHERE
+    # THE PROTOTYPES TO AN K-1-DIM SPHERE
     #W_new = W_new / np.sqrt(batch_dot(W_new,W_new))
     return W_new
 
@@ -138,6 +138,9 @@ def weight_update_elem(W, x, i_win, j_win, eta, sigma2):
     return W_new
 
 
+# Elementary versions of scoring functions for testing. They are more
+# transparent; it's easier to see they do the right thing. Very slow though.
+# SHOULD BE PUT IN A TESTING MODULE!
 def compute_scores_elem(W, x):
     max_rows, max_cols, fan_in = W.shape
     scores = np.zeros(shape=[max_rows, max_cols])
@@ -162,8 +165,8 @@ def compute_sq_distances_elem(W, x):
 #######################################################
 
 def umatrix(W):
-    """Create and visualize U-Matrix (i.e., a map showing how close neighboring
-       units are in the feature space)
+    """Create a U-Matrix (i.e., a map showing how close neighboring units are
+       in the feature space)
     """
     norm2 = lambda vec: np.linalg.norm(vec, ord=2)
     height, width, _ = W.shape
@@ -222,14 +225,15 @@ if __name__ == '__main__':
         optimizer_mode = 'argmin' if sys.argv[3] in ['sq_vec', 'sq_elem'] \
                           else 'argmax'
     
-    # Load the data-file into the "design matrix" x
-    X = dp.polygon_clusters_dataset()
-    dataset_name = 'polygon'
+    # Load the data-file into the "design matrix"
+    # THIS COMMENTING-OUT THING IS HORRIBLE
+    # X = dp.polygon_clusters_dataset()
+    # dataset_name = 'polygon'
 #     X = dp.mnist_dataset('../../PhD_Datasets/MNIST/train-images-idx3-ubyte')
 #     dataset_name = 'mnist'
-#     X, _ = dp.mnist_dataset_PCA('../../PhD_Datasets/MNIST/train-images-idx3-ubyte',
-#                                 dim=100)
-#     dataset_name = 'mnist_pca'
+    X, _ = dp.mnist_dataset_PCA('../../PhD_Datasets/MNIST/train-images-idx3-ubyte',
+                                dim=100)
+    dataset_name = 'mnist_pca'
     max_samples, fan_in = X.shape
     print('Number of examples: %d \nNumber of features: %d\n' % X.shape)
     

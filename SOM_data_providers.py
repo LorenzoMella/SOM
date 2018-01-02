@@ -10,8 +10,6 @@ import numpy as np
 import pandas as ps
 
 def malware_dataset():
-    import pandas as ps
-    
     path = ('/Users/Lorenzo/PhD_Datasets/malware-benignware-machine-data/')
     filename = 'all_malicious_with_headers.txt'
     x_df = ps.read_csv("%s%s" % (path, filename), delimiter=',')
@@ -27,8 +25,9 @@ def malware_dataset():
 
 
 def polygon_clusters_dataset(std=1):
-    """ Generate Gaussian distributed clusters of points at the vertices
-        of a cube. The standard deviation of the Gaussian is specified.
+    """ Generate spherically Gaussian distributed clusters of points at the
+        vertices of a cube. The common standard deviation of the Gaussian
+        components is specified.
     """
     side = 10.2
     X = np.zeros(shape=(20*8, 3))
@@ -41,7 +40,7 @@ def polygon_clusters_dataset(std=1):
             for k in [0,1]:
                 idx = 20*(4*i+2*j+k)
                 X[idx:idx+20,:] = ( np.array([ii[i,j,k],jj[i,j,k],kk[i,j,k]])
-                                   + std * np.random.randn(20,3) )
+                                    + std * np.random.randn(20,3) )
     return X
 
 

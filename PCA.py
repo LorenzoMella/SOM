@@ -48,7 +48,7 @@ def principal_components(X, dim=2, screeplot=False):
     # Order the eigenvectors from greatest to smallest eigenvalue modulus
     eigvs = eigvs[:, np.flip(np.argsort(np.absolute(eigs)), axis=0)]
     if screeplot:
-        pyplot.figure('Eigenvalue Screeplot')
+        pyplot.figure('Eigenvalue Scree-plot')
         pyplot.plot(np.flip(np.sort(np.absolute(eigs)), axis=0))
         pyplot.show()
     return np.dot(centered_X, eigvs[:,:dim]), eigvs
