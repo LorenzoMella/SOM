@@ -9,20 +9,48 @@
 import numpy as np
 import pandas as ps
 
+
+dataset_archive = '/Users/Lorenzo/PhD_Datasets/'
+
 def malware_dataset():
-    path = ('/Users/Lorenzo/PhD_Datasets/malware-benignware-machine-data/')
+    dataset_folder = 'malware-benignware-machine-data/'
     filename = 'all_malicious_with_headers.txt'
-    x_df = ps.read_csv("%s%s" % (path, filename), delimiter=',')
+    x_df = ps.read_csv("%s%s%s" % (dataset_archive, dataset_folder, filename),
+                       delimiter=',')
     col_labels = x_df.axes[1]
     # Drop irrelevant features (including class label for now!)
     # and the 14-th faux column
+    labels = x_df.as_matrix(columns=(2,))
     x_df = x_df.drop(columns=[col_labels[0],col_labels[2],col_labels[13]])
     # Standardize (order of operations shouldn't make a difference, because
     # std is unaffected by centering. If computations were exact, that is)
     x_df = (x_df - x_df.mean()) / x_df.std()
     # Done with pre-processing, extract raw-data information
-    return x_df.values
+    return x_df.values, labels, 'malware'
 
+
+def iris_dataset():
+    dataset_folder = 'iris/'
+    filename = 'bezdekIris.data'
+    x_df = ps.read_csv("%s%s%s" % (dataset_archive, dataset_folder, filename),
+                       delimiter=',')
+    # Save and remove labels
+    col_labels = x_df.axes[1]
+    labels = x_df.as_matrix(columns=[col_labels[-1]])
+    print(labels.shape)
+    x_df = x_df.drop(columns=[col_labels[-1]])
+    # Standardize (order of operations shouldn't make a difference, because
+    # std is unaffected by centering. If computations were exact, that is)
+    x_df = (x_df - x_df.mean()) / x_df.std()
+    # Done with pre-processing, extract raw-data information
+    return x_df.values, labels, 'iris'
+
+
+def iris_dataset_PCA():
+    from PCA import principal_components
+    raw_values, labels, _ = iris_dataset()
+    values = principal_components(raw_values, raw_values.shape[1])
+    return values, labels, 'iris_PCA'
 
 def polygon_clusters_dataset(std=1):
     """ Generate spherically Gaussian distributed clusters of points at the
@@ -30,7 +58,10 @@ def polygon_clusters_dataset(std=1):
         components is specified.
     """
     side = 10.2
-    X = np.zeros(shape=(20*8, 3))
+    samples_per_cluster = 20
+    num_clusters = 8    # 8 vertices of a cube
+    max_samples = samples_per_cluster * num_clusters
+    X = np.zeros(shape=(max_samples, 3))
     ii, jj, kk = np.meshgrid([-1,1], [-1,1], [-1,1], indexing='ij')
     ii = ii.astype(np.float64) * side
     jj = jj.astype(np.float64) * side
@@ -40,11 +71,13 @@ def polygon_clusters_dataset(std=1):
             for k in [0,1]:
                 idx = 20*(4*i+2*j+k)
                 X[idx:idx+20,:] = ( np.array([ii[i,j,k],jj[i,j,k],kk[i,j,k]])
-                                    + std * np.random.randn(20,3) )
-    return X
+                                + std * np.random.randn(samples_per_cluster,3) )
+    # Given how the data is ordered, generate labels
+    labels = np.array([n // samples_per_cluster for n in range(max_samples)])
+    return X, labels, 'polygon'
 
 
-def mnist_dataset(path):
+def mnist_dataset():
     """ Works with all MNIST (vanilla) files. Training and test, images and
         labels.
         
@@ -52,6 +85,21 @@ def mnist_dataset(path):
         -------
         ndarray (dtype=numpy.float64)
     """
+    dataset_folder = 'MNIST/'
+    # Fetch the input data
+    filename = 'train-images-idx3-ubyte'
+    images_path = '%s%s%s' % (dataset_archive, dataset_folder, filename)
+    X = extract_idx(images_path)
+    # The input data is pre-normalized between 0 and 1
+    X = X.reshape((X.shape[0], -1)) / 256.
+    # Fetch the labels
+    filename = 'train-labels-idx1-ubyte'
+    labels_path = '%s%s%s' % (dataset_archive, dataset_folder, filename)
+    labels = extract_idx(labels_path)
+    return X, labels, 'MNIST'
+
+
+def extract_idx(path):
     # System endianness: byteorder in ['big', 'little'].
     # The vanilla MNIST files are all big-endian.
     from sys import byteorder
@@ -60,7 +108,8 @@ def mnist_dataset(path):
     # number of axes of the array
     first_bytes = np.fromfile(fp, dtype=np.uint8, count=4)
     assert first_bytes[0] == 0 and first_bytes[1] == 0
-    # File contains greyscale levels in single unsigned bytes
+    # THIS IMPLEMENTATION WORKS ONLY IF first_bytes[2] IS 0x8, I.E., IF THE
+    # DATA ARE 8-BIT UNSIGNED
     assert first_bytes[2] == 0x08
     ndim = first_bytes[3]
     # The next ndim 32-bit sequences are unsigned integers representing
@@ -68,20 +117,24 @@ def mnist_dataset(path):
     sizes = np.fromfile(fp, dtype=np.uint32, count=ndim)
     # Convert if needed
     if byteorder == 'little': sizes.byteswap(True)
-    # Compute the element count in the file (i.e., product of sizes)
-    max_samples = sizes[0]
-    max_features = 1
-    for size in sizes[1:]: max_features *= size
+    # The first feature represents samples
+    max_elements = 1
+    for size in sizes: max_elements *= size
     # Luckily, the greyscale levels are expressed as unsigned bytes:
     # no byteswap needed!
-    X = np.fromfile(fp, dtype=np.uint8, count=max_samples*max_features)
+    X = np.fromfile(fp, dtype=np.uint8, count=max_elements)
+    # Data is converted to float64, put in table format
+    X = X.reshape(sizes).astype(np.float64)
     fp.close()
-    # Data should be converted to float64, put in table format
-    # and normalised between 0 and 1
-    return X.reshape((max_samples, max_features)).astype(np.float64) / 256.
+    return X
 
 
-def mnist_dataset_PCA(path, dim):
+def mnist_dataset_PCA(dim=None):
     from PCA import principal_components
-    X_raw = mnist_dataset(path)
-    return principal_components(X_raw, dim)
+    X_raw, labels, _ = mnist_dataset()
+    # If not specified, use the same dimensionality as the original data
+    if dim == None:
+        dim = X_raw.shape[1]
+    dataset_name = 'MNIST_PCA%03d' % (dim,)
+    X, _ = principal_components(X_raw, dim)
+    return X, labels, dataset_name

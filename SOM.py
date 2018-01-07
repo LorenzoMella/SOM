@@ -7,7 +7,6 @@
 #               Python 3.6.3/numpy 1.13.3   #
 #===========================================#
 
-# (Current version is just a script with global variables and functions)
 
 import sys  # for command line arguments
 import time
@@ -32,8 +31,8 @@ np.random.seed(123)
 ############################################
 
 # Lattice size
-height = 50
-width = 50
+height = 30
+width = 30
 
 # Initial values of exponentially decreasing parameters
 eta_i = 0.5
@@ -227,13 +226,14 @@ if __name__ == '__main__':
     
     # Load the data-file into the "design matrix"
     # THIS COMMENTING-OUT THING IS HORRIBLE
-    # X = dp.polygon_clusters_dataset()
-    # dataset_name = 'polygon'
-#     X = dp.mnist_dataset('../../PhD_Datasets/MNIST/train-images-idx3-ubyte')
-#     dataset_name = 'mnist'
-    X, _ = dp.mnist_dataset_PCA('../../PhD_Datasets/MNIST/train-images-idx3-ubyte',
-                                dim=100)
-    dataset_name = 'mnist_pca'
+    X, labels, dataset_name = (
+                               dp.polygon_clusters_dataset()
+#                                dp.iris_dataset()
+#                                dp.iris_dataset_PCA()
+#                                dp.mnist_dataset()
+#                                dp.mnist_dataset_PCA(dim=100)
+                              )
+    
     max_samples, fan_in = X.shape
     print('Number of examples: %d \nNumber of features: %d\n' % X.shape)
     
@@ -281,31 +281,44 @@ if __name__ == '__main__':
                  height, width, fan_in, max_steps_so, max_steps_ft,
                  '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
     print('Saving weights as %s' % (filename,))
-    np.save(filename, W)
+    np.save('weights/%s' % (filename,), W)
     print('... done.')
     
-    # Visualize the scores on some examples
-    for i in range(10):
-        sample_x = X[np.random.randint(0,max_samples),:]
-        scores = compute_scores(W, sample_x)
-        pyplot.matshow(scores)
-        pyplot.colorbar()
-        pyplot.set_cmap('jet')
+#     Visualize the scores on some examples
+#     for i in range(10):
+#         rand_index = np.random.randint(0, max_samples)
+#         sample_x = X[rand_index, :]
+#         sample_label = labels[rand_index]
+#         scores = compute_scores(W, sample_x)
+#         pyplot.figure()
+#         pyplot.title(str(sample_label))
+#         pyplot.imshow(scores)
+#         pyplot.colorbar()
+#         pyplot.set_cmap('jet')
+#     
+#     pyplot.show()
     
     # Visualize the U-Matrix of the network
-    pyplot.figure('U-Matrix and Input Space Scenario')
-    #pyplot.subplot(121, title='U-Matrix')
-    pyplot.imshow(umatrix(W))
-    pyplot.colorbar()
-    pyplot.set_cmap('plasma')
+   #  pyplot.imshow(umatrix(W))
+#     pyplot.colorbar()
+# pyplot.set_cmap('plasma')
     
-#     fig = pyplot.figure('U-Matrix and Input Space Scenario')
-#     ax = fig.add_subplot(122, projection='3d', title='Input Space')
-#     W = W.reshape((W.shape[0]*W.shape[1], W.shape[2]))
-#     ax.scatter(W[:,0], W[:,1], W[:,2], 'b.')
-#     ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='^')
-#     ax.set_xlabel('i')
-#     ax.set_ylabel('j')
-#     ax.set_zlabel('k')
+    fig = pyplot.figure('U-Matrix and Input Space Scenario')
+    ax = fig.add_subplot(111, projection='3d', title='U-Matrix')
+    ax.plot_wireframe(mesh_i, mesh_j, 0 * mesh_i, linewidth=.3, color='k')
+    ax.scatter(mesh_i, mesh_j, marker='.', s=50)
+    ax.set_axis_off()
     
+    fig = pyplot.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
+    ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
+    ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='o', s=25)
+    ax.set_axis_off()
+#     pyplot.legend(('Prototypes','Clusters'))
     pyplot.show()
+    
+    filename = ( 'fig_%s_s%d-%d-%d_i%d-%d%s.pdf' % (dataset_name,
+                 height, width, fan_in, max_steps_so, max_steps_ft,
+                 '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
+    pyplot.savefig('figs/%s' % (filename,), format='pdf')

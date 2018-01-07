@@ -39,7 +39,7 @@ def covariance_eig(X, is_centered=False):
 
 
 def principal_components(X, dim=2, screeplot=False):
-    # Should be made compatible with negative indices...
+    # SHOULD BE MADE COMPATIBLE WITH NEGATIVE INDICES...
     assert dim > 0
     dim = min(dim, X.shape[1])
     X_mean = np.mean(X, axis=0)
@@ -107,11 +107,13 @@ def experiment3():
     """Plot PCA reconstruction of a bunch of MNIST images
     """
     from SOM_data_providers import mnist_dataset
-    X = mnist_dataset('../../PhD_Datasets/MNIST/train-images-idx3-ubyte')
+    X, labels, _ = mnist_dataset()
+    print(X.shape)
     X_mean = np.mean(X, axis=0)
     Y, U = principal_components(X, X.shape[1])
     rand_idx = np.random.randint(X.shape[0])
-    print('Example chosen at random: %d' % (rand_idx,))
+    print('Example chosen at random: %d.\nLabel: %d'
+          % (rand_idx, labels[rand_idx]))
     # Draw pictures of the original and 9 progressively more precise
     # reconstructions
     pyplot.figure('reconstruction')
