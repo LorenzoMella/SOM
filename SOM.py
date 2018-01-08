@@ -242,7 +242,7 @@ def plot_data_and_prototypes(X, W):
     ax = fig.add_subplot(111, projection='3d')
     ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
     ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
-    ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='o', s=25)
+    ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
     ax.set_axis_off()
 
 
@@ -281,7 +281,8 @@ if __name__ == '__main__':
     # Load the data-file into the "design matrix"
     # THIS COMMENTING-OUT THING IS HORRIBLE
     X, labels, dataset_name = (
-                               dp.polygon_clusters_dataset()
+#                                dp.polygon_clusters_dataset()
+                               dp.linked_rings_dataset()
 #                                dp.iris_dataset()
 #                                dp.iris_dataset_PCA()
 #                                dp.mnist_dataset()
@@ -296,7 +297,8 @@ if __name__ == '__main__':
     W_init = np.random.randn(height, width, fan_in)
     random_state = np.random.get_state()
     fig_num = 1
-    for max_steps_so in [100, 200, 500, 1000, 2000, 5000]:
+    steps_list = [0, 100, 200, 500, 1000, 2000, 5000]
+    for max_steps_so in steps_list:
         np.random.set_state(random_state)
         W = W_init
     
@@ -338,11 +340,12 @@ if __name__ == '__main__':
                       % (t, 1000.*(finish - start)))
     
         fig = pyplot.figure('U-matrix progression')
-        ax = fig.add_subplot(1,6,fig_num, title='%d iterations' % max_steps_so)
+        ax = fig.add_subplot(1, len(steps_list), fig_num,
+                             title='%d iterations' % max_steps_so)
         fig_num += 1
         pyplot.imshow(umatrix(W))
         ax.set_axis_off()
-        pyplot.set_cmap('magma')
+        pyplot.set_cmap('plasma')
     
     pyplot.show()
     
@@ -355,8 +358,8 @@ if __name__ == '__main__':
 #     print('... done.')
     
     # Visualize the scores on some (10) examples
-    indices = np.random.randint(0, max_samples, size=10)
-    plot_examples(indices, compute_scores)
+#     indices = np.random.randint(0, max_samples, size=10)
+#     plot_examples(indices, compute_scores)
     
     # Visualize the U-Matrix of the network
     pyplot.imshow(umatrix(W))

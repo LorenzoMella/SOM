@@ -77,6 +77,37 @@ def polygon_clusters_dataset(std=1):
     return X, labels, 'polygon'
 
 
+def linked_rings_dataset(std=1):
+    """ The standard deviation std refers to the one of Gaussian points
+        extracted around each ideal point of the circumference
+    """
+    samples_per_point = 10
+    ring_plot_points = 100
+    max_samples_per_ring = samples_per_point * ring_plot_points
+    
+    radius = 10.2
+    angles = np.linspace(0, 2*np.pi, ring_plot_points)
+    
+    # Horizontal ring
+    points_h = np.vstack((np.cos(angles),np.sin(angles),np.zeros_like(angles)))
+    points_h = radius * points_h.T - np.array([0.5 * radius, 0, 0])
+    offsets = std * np.random.randn(samples_per_point, ring_plot_points, 3)
+    X_h = ( points_h + offsets ).reshape(max_samples_per_ring, 3)
+    labels_h = np.zeros(shape=(max_samples_per_ring,))
+    
+    # Horizontal ring
+    points_v = np.vstack((np.cos(angles), np.zeros_like(angles),np.sin(angles)))
+    points_v = radius * points_v.T + np.array([0.5 * radius, 0, 0])
+    offsets = std * np.random.randn(samples_per_point, ring_plot_points, 3)
+    X_v = ( points_v + offsets ).reshape(max_samples_per_ring, 3)
+    labels_v = np.ones(shape=(max_samples_per_ring,))
+    
+    X = np.vstack( (X_h, X_v) )
+    labels = np.hstack( (labels_h, labels_v) )
+    
+    return X, labels, 'linked_rings'
+
+
 def mnist_dataset():
     """ Works with all MNIST (vanilla) files. Training and test, images and
         labels.
