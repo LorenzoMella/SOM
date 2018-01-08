@@ -14,8 +14,9 @@ import numpy as np
 from time import process_time
 
 from matplotlib import pyplot
+from mpl_toolkits.mplot3d import Axes3D
 #from PCA import covariance_eig
-from SOM import batch_dot, umatrix
+from SOM import batch_dot, umatrix, plot_data_and_prototypes
 import SOM_data_providers as dp
 
 height = 50
@@ -154,8 +155,9 @@ def update_W(X, W):
 def update_W_e(X, W):
     height, width, max_features = W.shape
     mask = voronoi_cells_e(X, W)
-    cell_num_elems = np.sum(mask, axis=-1)
-    cell_sum_X = sum_cell_e(X, mask)
+    cell_num_elems = np.pad( np.sum(mask, axis=-1), pad_width=1, mode='wrap' )
+    cell_sum_X = np.pad( sum_cell_e(X, mask), pad_width=((1,1),(1,1),(0,0)),
+                        mode='wrap' )
     cell_mean_X = np.empty((height, width, max_features))
 #     for i in range(height):
 #         for j in range(width):
@@ -163,18 +165,33 @@ def update_W_e(X, W):
     # Neighborhoods are unions of adjacent (non diagonal) cells. We are
     # computing them with a toroidal topology, because it's easier and
     # empirically shown as more convenient
-    neigh_num_elems = ( cell_num_elems
-                        + np.roll(cell_num_elems, shift=-1, axis=0)
-                        + np.roll(cell_num_elems, shift=1, axis=0)
-                        + np.roll(cell_num_elems, shift=-1, axis=1)
-                        + np.roll(cell_num_elems, shift=1, axis=1) )
+    neigh_num_elems = np.zeros((height, width))
+    for i in range(height):
+        for j in range(width):
+            neigh_num_elems[i,j] = ( cell_num_elems[i,j]
+                                     + cell_num_elems[i,j+1]
+                                     + cell_num_elems[i,j+2]
+                                     + cell_num_elems[i+1,j]
+                                     + cell_num_elems[i+1,j+1]
+                                     + cell_num_elems[i+1,j+2]
+                                     + cell_num_elems[i+2,j]
+                                     + cell_num_elems[i+2,j+1]
+                                     + cell_num_elems[i+2,j+2] )
     
     # neigh_mean_X, INSTEAD, IS THE NUMERATOR
-    neigh_sum_X = ( cell_sum_X
-                     + np.roll(cell_sum_X, shift=-1, axis=0)
-                     + np.roll(cell_sum_X, shift=1, axis=0)
-                     + np.roll(cell_sum_X, shift=-1, axis=1)
-                     + np.roll(cell_sum_X, shift=1, axis=1) )
+    neigh_sum_X = np.zeros((height, width, max_features))
+    for i in range(height):
+        for j in range(width):
+            neigh_sum_X[i,j,:] = ( cell_sum_X[i,j,:]
+                                   + cell_sum_X[i,j+1,:]
+                                   + cell_sum_X[i,j+2,:]
+                                   + cell_sum_X[i+1,j,:]
+                                   + cell_sum_X[i+1,j+1,:]
+                                   + cell_sum_X[i+1,j+2,:]
+                                   + cell_sum_X[i+2,j,:]
+                                   + cell_sum_X[i+2,j+1,:]
+                                   + cell_sum_X[i+2,j+2,:] )
+
     # Update weights
     W_new = np.empty(W.shape)
     for i in range(height):
@@ -185,15 +202,19 @@ def update_W_e(X, W):
 
 if __name__ == '__main__':
     X, labels, _ = dp.polygon_clusters_dataset()
-    W = np.random.randn(height, width, X.shape[1])
+    indices = np.random.randint(0, X.shape[0], size=height * width)
+    W = X[indices,:].reshape((height, width, -1))
+    print(W.shape)
     
-    for t in range(1):
-        W1 = update_W(X, W)
-        W2 = update_W_e(X, W)
+    for t in range(15):
+        W = update_W_e(X, W)
         
+#     print(np.all(np.isclose(W1, W2, atol=10**-5)))
     pyplot.figure('U-Matrix and Input Space Scenario')
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
+    
+    plot_data_and_prototypes(X, W)
     pyplot.show()
     

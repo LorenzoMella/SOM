@@ -62,6 +62,27 @@ def batch_dot(a, b):
     return np.sum(a*b, axis=-1)
 
 
+def training_phase(X, W, max_steps, phase_name, eta, sigma2, scoring_f):
+    print('%s.\n----------------------' % (phase_name,))
+    for t in range(max_steps):
+        start = timer()
+        # Draw random input
+        sample_x = X[np.random.randint(0,X.shape[0]), :]
+        # Compute winning neuron coordinates
+        scores = scoring_f(W, sample_x)
+        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
+        # Single parameter update
+        W = weight_update(W, sample_x, i_win, j_win, eta(t,max_steps),
+                          sigma2(t, max_steps))
+        finish = timer()
+        if t % 500 == 0:
+            # Avg squared error refers to sq-distance between data-point and
+            # its most responsive ('winning') neuron
+            print('Iteration no. %d. Duration (one update): %.3f ms'
+                  % (t, 1000.*(finish - start)))
+        return W
+
+
 def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     """Single weight update for the online SOM algorithm
     """
@@ -81,7 +102,7 @@ def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     # The resulting algorithm is like doing, for all i,j,
     #
     #   W_new[i,j,:] = W_new[i,j,:] = eta*h[i,j]*(sample_x - W[i,j,fan_in])
-    W_new = W + eta * h[:,:,np.newaxis] * (sample_x - W)
+    W_new = W + eta * h[:,:,np.newaxis] * (x - W)
     # NORMALIZATION HERE PRODUCES INTERESTING RESULTS BUT CONFINES
     # THE PROTOTYPES TO AN K-1-DIM SPHERE
     #W_new = W_new / np.sqrt(batch_dot(W_new,W_new))
@@ -193,6 +214,39 @@ def compute_avg_scores(W, X):
     raise NotImplementedError
 
 
+
+################
+#   Plotting   #
+################
+
+def plot_examples(indices, compute_scores):
+    for idx in indices:
+        sample_x = X[idx, :]
+        sample_label = labels[idx]
+        scores = compute_scores(W, sample_x)
+        pyplot.figure()
+        pyplot.title(str(sample_label))
+        pyplot.imshow(scores)
+        pyplot.colorbar()
+        pyplot.set_cmap('jet')
+
+def plot_neurons():
+    fig = pyplot.figure('Neuron topology')
+    ax = fig.add_subplot(111, projection='3d', title='U-Matrix')
+    ax.plot_wireframe(mesh_i, mesh_j, 0 * mesh_i, linewidth=.3, color='k')
+    ax.scatter(mesh_i, mesh_j, marker='.', s=50)
+    ax.set_axis_off()
+
+def plot_data_and_prototypes(X, W):
+    fig = pyplot.figure('Prototypes in the Data Space')
+    ax = fig.add_subplot(111, projection='3d')
+    ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
+    ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
+    ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='o', s=25)
+    ax.set_axis_off()
+
+
+
 ##################
 #   Simulation   #
 ##################
@@ -236,89 +290,84 @@ if __name__ == '__main__':
     
     max_samples, fan_in = X.shape
     print('Number of examples: %d \nNumber of features: %d\n' % X.shape)
-    
+
+
     # Initialize network weights (A BETTER WAY IS TO USE THE DATAPOINTS THEMSELVES)
-    W = np.random.randn(height, width, fan_in)
+    W_init = np.random.randn(height, width, fan_in)
+    random_state = np.random.get_state()
+    fig_num = 1
+    for max_steps_so in [100, 200, 500, 1000, 2000, 5000]:
+        np.random.set_state(random_state)
+        W = W_init
     
-    # Self-organizing phase
-    print('Self-organizing phase.\n----------------------')
-    for t in range(max_steps_so):
-        start = timer()
-        # Draw random input
-        sample_x = X[np.random.randint(0,max_samples),:]
-        # Compute winning neuron coordinates
-        scores = compute_scores(W, sample_x)
-        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-        # Single parameter update
-        W = weight_update(W, sample_x, i_win, j_win, eta_so(t,max_steps_so),
-                          sigma2_so(t, max_steps_so))
-        finish = timer()
-        if t % 500 == 0:
-            # Avg squared error refers to sq-distance between data-point and
-            # its most responsive ('winning') neuron
-            print('Iteration no. %d. Duration (one update): %.3f ms'
-                  % (t, 1000.*(finish - start)))
+        # Self-organizing phase
+        print('Self-organizing phase.\n----------------------')
+        for t in range(max_steps_so):
+            start = timer()
+            # Draw random input
+            sample_x = X[np.random.randint(0,max_samples),:]
+            # Compute winning neuron coordinates
+            scores = compute_scores(W, sample_x)
+            i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
+            # Single parameter update
+            W = weight_update(W, sample_x, i_win, j_win, eta_so(t,max_steps_so),
+                              sigma2_so(t, max_steps_so))
+            finish = timer()
+            if t % 500 == 0:
+                # Avg squared error refers to sq-distance between data-point and
+                # its most responsive ('winning') neuron
+                print('Iteration no. %d. Duration (one update): %.3f ms'
+                      % (t, 1000.*(finish - start)))
     
-    # Fine-tuning phase
-    print('Fine-tuning phase.\n------------------')
-    for t in range(max_steps_ft):
-        start = timer()
-        # Draw random input
-        sample_x = X[np.random.randint(0,max_samples),:]
-        # Compute winning neuron coordinates
-        scores = compute_scores(W, sample_x)
-        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-        # Single parameter update
-        W = weight_update(W, sample_x, i_win, j_win, eta_ft(t, max_steps_ft),
-                          sigma2_ft(t, max_steps_ft))
-        finish = timer()
-        if t % 500 == 0:
-            print('Iteration no. %d. Duration (one update): %.3f ms'
-                  % (t, 1000.*(finish - start)))
     
-    # Save the matrix as a binary file
-    filename = ( 'weights_%s_s%d-%d-%d_i%d-%d%s.npy' % (dataset_name,
-                 height, width, fan_in, max_steps_so, max_steps_ft,
-                 '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
-    print('Saving weights as %s' % (filename,))
-    np.save('weights/%s' % (filename,), W)
-    print('... done.')
+        # Fine-tuning phase
+        print('Fine-tuning phase.\n------------------')
+        for t in range(max_steps_ft):
+            start = timer()
+            # Draw random input
+            sample_x = X[np.random.randint(0,max_samples),:]
+            # Compute winning neuron coordinates
+            scores = compute_scores(W, sample_x)
+            i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
+            # Single parameter update
+            W = weight_update(W, sample_x, i_win, j_win, eta_ft(t, max_steps_ft),
+                              sigma2_ft(t, max_steps_ft))
+            finish = timer()
+            if t % 500 == 0:
+                print('Iteration no. %d. Duration (one update): %.3f ms'
+                      % (t, 1000.*(finish - start)))
     
-#     Visualize the scores on some examples
-#     for i in range(10):
-#         rand_index = np.random.randint(0, max_samples)
-#         sample_x = X[rand_index, :]
-#         sample_label = labels[rand_index]
-#         scores = compute_scores(W, sample_x)
-#         pyplot.figure()
-#         pyplot.title(str(sample_label))
-#         pyplot.imshow(scores)
-#         pyplot.colorbar()
-#         pyplot.set_cmap('jet')
-#     
-#     pyplot.show()
+        fig = pyplot.figure('U-matrix progression')
+        ax = fig.add_subplot(1,6,fig_num, title='%d iterations' % max_steps_so)
+        fig_num += 1
+        pyplot.imshow(umatrix(W))
+        ax.set_axis_off()
+        pyplot.set_cmap('magma')
     
-    # Visualize the U-Matrix of the network
-   #  pyplot.imshow(umatrix(W))
-#     pyplot.colorbar()
-# pyplot.set_cmap('plasma')
-    
-    fig = pyplot.figure('U-Matrix and Input Space Scenario')
-    ax = fig.add_subplot(111, projection='3d', title='U-Matrix')
-    ax.plot_wireframe(mesh_i, mesh_j, 0 * mesh_i, linewidth=.3, color='k')
-    ax.scatter(mesh_i, mesh_j, marker='.', s=50)
-    ax.set_axis_off()
-    
-    fig = pyplot.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
-    ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
-    ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='o', s=25)
-    ax.set_axis_off()
-#     pyplot.legend(('Prototypes','Clusters'))
     pyplot.show()
     
-    filename = ( 'fig_%s_s%d-%d-%d_i%d-%d%s.pdf' % (dataset_name,
-                 height, width, fan_in, max_steps_so, max_steps_ft,
-                 '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
-    pyplot.savefig('figs/%s' % (filename,), format='pdf')
+#     Save the matrix as a binary file
+#     filename = ( 'weights_%s_s%d-%d-%d_i%d-%d%s.npy' % (dataset_name,
+#                  height, width, fan_in, max_steps_so, max_steps_ft,
+#                  '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
+#     print('Saving weights as %s' % (filename,))
+#     np.save('weights/%s' % (filename,), W)
+#     print('... done.')
+    
+    # Visualize the scores on some (10) examples
+    indices = np.random.randint(0, max_samples, size=10)
+    plot_examples(indices, compute_scores)
+    
+    # Visualize the U-Matrix of the network
+    pyplot.imshow(umatrix(W))
+    pyplot.colorbar()
+    pyplot.set_cmap('plasma')
+    
+    plot_neurons()
+    plot_data_and_prototypes(X, W)
+    pyplot.show()
+    
+#     filename = ( 'fig_%s_s%d-%d-%d_i%d-%d%s.pdf' % (dataset_name,
+#                  height, width, fan_in, max_steps_so, max_steps_ft,
+#                  '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
+#     pyplot.savefig('figs/%s' % (filename,), format='pdf')
