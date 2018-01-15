@@ -135,16 +135,16 @@ def experiment3():
 
 
 if __name__ == '__main__':
-    import sys
-    if len(sys.argv) == 1 or sys.argv[1] not in ['1', '2', '3']:
+    from sys import argv
+    if len(argv) == 1 or argv[1] not in ['1', '2', '3']:
         print('Usage: add numerical argument\n'
               '1 - Quality of reconstruction on random 2D points\n'
               '2 - Timings as dimensionality increases\n'
               '3 - MNIST reconstruction increasing principal components')
-    elif sys.argv[1] == '1':
+    elif argv[1] == '1':
         experiment1()
-    elif sys.argv[1] == '2':
+    elif argv[1] == '2':
         experiment2()
-    elif sys.argv[1] == '3':
+    elif argv[1] == '3':
         experiment3()
     

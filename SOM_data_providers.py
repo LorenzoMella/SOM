@@ -8,9 +8,9 @@
 
 import numpy as np
 import pandas as ps
+from os import environ
 
-
-dataset_archive = '/Users/Lorenzo/PhD_Datasets/'
+dataset_archive = '%s/' % (environ['HOME'],)
 
 def malware_dataset():
     dataset_folder = 'malware-benignware-machine-data/'
