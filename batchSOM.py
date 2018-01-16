@@ -2,13 +2,9 @@
 #        SOM - Batch Map version            #
 #                                           #
 #        Author: Lorenzo Mella              #
-#        Version: 2017-12-12                #
-#    Tested on: Python 3.6.3/numpy 1.13.3   #
+#    Tested on: Python 3.6.4/numpy 1.13     #
 #===========================================#
 
-"""
-Nothing interesting here YET
-"""
 
 import numpy as np
 from time import process_time
@@ -30,12 +26,13 @@ width = 49
 # np.dot(x[n,:] - w[i,j,:], x[n,:] - w[i,j,:])
 
 def sq_distances_v(X, W):
-    height, width, fan_in = W.shape
-    diff = X - W[:,:,np.newaxis,:]
+    diff = X - W[..., np.newaxis, :]
     return np.sum(diff**2, axis=-1)
 
-# The same behavior should arise from the more elementary code:
+
 def sq_distances_m(X, W):
+    """ For some reason this is considerably faster than the v version...
+    """
     height, width = W.shape[:2]
     max_samples = X.shape[0]
     sq_distances = np.empty(shape=(height, width, max_samples),
@@ -76,9 +73,14 @@ def time_m(max_iter, max_samples):
 def equal_results(decimal_places=10):
     W = np.random.randn(50, 49, 11)
     X = np.random.randn(10000, 11)
-    res_m = sq_distances_m(X,W)
-    res_v = sq_distances_v(X,W)
-    return np.all(np.isclose(res_m, res_v, atol=10**-decimal_places))
+    sq_dist_m = sq_distances_m(X,W)
+    sq_dist_v = sq_distances_v(X,W)
+    sq_dist_equal = np.all( np.isclose(sq_dist_m, sq_dist_v,
+                                       atol=10**-decimal_places) )
+    vor_v = voronoi_cells(X, W)
+    vor_m = voronoi_cells(X, W)
+    vor_equal = np.all( np.equal(vor_m, vor_v) )
+    return sq_dist_equal, vor_equal
 
 
 def voronoi_cells(X, W):
@@ -86,16 +88,17 @@ def voronoi_cells(X, W):
         whose boolean entry [i,j,n] is True iff X[n,:] belongs to the Voronoi
         Cell of prototype W[i,j,:].
     """
-    max_samples = X.shape[0]
-    sq_dists = sq_distances_m(X, W)
-    argmin_dist = np.argmin(sq_dists, axis=-1)
-    indexes = np.arange(max_samples)
-    mask = np.equal(argmin_dist[:,:,np.newaxis], indexes)
-    return mask
+    max_samples, _ = X.shape
+    prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    num_prototypes, _ = prototype_sample_dists.shape
+    closest_prototype = np.argmin(prototype_sample_dists, axis=0)
+    indexes = np.arange(num_prototypes)
+    mask = np.equal(closest_prototype, indexes)
+    return mask.reshape()
 
 
 def voronoi_cells_e(X, W):
-    max_samples = X.shape[0]
+    max_samples, _ = X.shape
     height, width, _ = W.shape
     sq_dists = sq_distances_m(X, W)
     argmin_dist = np.argmin(sq_dists, axis=-1)
@@ -116,14 +119,17 @@ def sum_cell(X, mask):
 
 
 def sum_cell_e(X, mask):
-    height, width, max_features = W.shape
-    max_samples, _ = X.shape
+    """ Same as sum_cell but more elementary. For testing purposes.
+        Current version of sum_cell does the same as this to 10 decimal places.
+    """
+    height, width, _ = mask.shape
+    max_samples, max_features = X.shape
     cell_sum_X = np.zeros(shape=(height, width, max_features))
     for i in range(height):
         for j in range(width):
             for n in range(max_samples):
-                cell_sum_X[i,j,:] = ( cell_sum_X[i,j,:]
-                                     + (X[n,:] if mask[i,j,n] == 1 else 0) )
+                if mask[i,j,n] == True:
+                    cell_sum_X[i,j,:] = cell_sum_X[i,j,:] + X[n,:]
     return cell_sum_X
 
 
@@ -217,4 +223,3 @@ if __name__ == '__main__':
     
     plot_data_and_prototypes(X, W)
     pyplot.show()
-    

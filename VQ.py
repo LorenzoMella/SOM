@@ -12,18 +12,21 @@ euclidean_dist = lambda a,b: np.linalg.norm(a - b, ord=2)
 
 
 def sq_distances_v(X, W):
-    height, width, fan_in = W.shape
-    diff = X - W.broadcast_to((height,width,1,fan_in))
-    return np.sum(diff*diff, axis=-1)
+    """ Compute an array of squared distances between any prototype in W
+        and any sample vector in X:
+          output[i1, ..., i_K-1, n] = sq_dist( X[n,:], W[i1, ..., i_K-1, :] )
+    """
+    diff = X - W[:,:,np.newaxis,:]
+    return np.sum(diff**2., axis=-1)
 
 
 def voronoi_cells(X, W, dist=euclidean_dist):
-    raise NotImplementedError
     max_samples = X.shape[0]
-    sq_dists = sq_distances(X, W)
+    sq_dists = sq_distances_v(X, W)
     argmin_dist = np.argmin(sq_dists, axis=-1)
-    indexes = np.arange(max_samples).broadcast_to((1, 1, max_samples))
-    return np.equals(argmin_dist, indexes)
+    indexes = np.arange(max_samples)
+    mask = np.equal(argmin_dist[:,:,np.newaxis], indexes)
+    return mask
 
 
 def best_centroids(X, cells, dist=euclidean_dist):
