@@ -10,12 +10,12 @@ import numpy as np
 import pandas as ps
 from os import environ
 
-dataset_archive = '%s/' % (environ['HOME'],)
+dataset_archive = '%s/PhD_Datasets' % (environ['HOME'],)
 
 def malware_dataset():
-    dataset_folder = 'malware-benignware-machine-data/'
+    dataset_folder = 'malware-benignware-machine-data'
     filename = 'all_malicious_with_headers.txt'
-    x_df = ps.read_csv("%s%s%s" % (dataset_archive, dataset_folder, filename),
+    x_df = ps.read_csv("%s/%s/%s" % (dataset_archive, dataset_folder, filename),
                        delimiter=',')
     col_labels = x_df.axes[1]
     # Drop irrelevant features (including class label for now!)
@@ -30,9 +30,9 @@ def malware_dataset():
 
 
 def iris_dataset():
-    dataset_folder = 'iris/'
+    dataset_folder = 'iris'
     filename = 'bezdekIris.data'
-    x_df = ps.read_csv("%s%s%s" % (dataset_archive, dataset_folder, filename),
+    x_df = ps.read_csv("%s/%s/%s" % (dataset_archive, dataset_folder, filename),
                        delimiter=',')
     # Save and remove labels
     col_labels = x_df.axes[1]
@@ -116,16 +116,16 @@ def mnist_dataset():
         -------
         ndarray (dtype=numpy.float64)
     """
-    dataset_folder = 'MNIST/'
+    dataset_folder = 'MNIST'
     # Fetch the input data
     filename = 'train-images-idx3-ubyte'
-    images_path = '%s%s%s' % (dataset_archive, dataset_folder, filename)
+    images_path = '%s/%s/%s' % (dataset_archive, dataset_folder, filename)
     X = extract_idx(images_path)
     # The input data is pre-normalized between 0 and 1
     X = X.reshape((X.shape[0], -1)) / 256.
     # Fetch the labels
     filename = 'train-labels-idx1-ubyte'
-    labels_path = '%s%s%s' % (dataset_archive, dataset_folder, filename)
+    labels_path = '%s/%s/%s' % (dataset_archive, dataset_folder, filename)
     labels = extract_idx(labels_path)
     return X, labels, 'MNIST'
 
