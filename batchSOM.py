@@ -89,25 +89,24 @@ def voronoi_cells(X, W):
         Cell of prototype W[i,j,:].
     """
     max_samples, _ = X.shape
+    height, width, _ = W.shape
     prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     num_prototypes, _ = prototype_sample_dists.shape
     closest_prototype = np.argmin(prototype_sample_dists, axis=0)
     indexes = np.arange(num_prototypes)
-    mask = np.equal(closest_prototype, indexes)
-    return mask.reshape()
+    mask = np.equal(closest_prototype, indexes[:,np.newaxis])
+    return mask.reshape(height, width, max_samples)
 
 
 def voronoi_cells_e(X, W):
     max_samples, _ = X.shape
     height, width, _ = W.shape
-    sq_dists = sq_distances_m(X, W)
-    argmin_dist = np.argmin(sq_dists, axis=-1)
-    mask = np.empty(shape=(height, width, max_samples))
-    for i in range(height):
-        for j in range(width):
-            for n in range(max_samples):
-                mask[i,j,n] = argmin_dist[i,j] == n
-    return mask
+    prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    closest_prototype = np.argmin(prototype_sample_dists, axis=0)
+    for n in range(max_samples):
+        for p in range(height, width):
+            mask[p,n] = closest_prototype[n] == p
+    return mask.reshape(height, width, max_samples)
 
 
 def sum_cell(X, mask):
@@ -136,7 +135,7 @@ def sum_cell_e(X, mask):
 def update_W(X, W):
     mask = voronoi_cells(X, W)
     cell_num_elems = np.sum(mask, axis=-1)
-    cell_mean_X = sum_cell(X, mask) / cell_num_elems[:,:,np.newaxis]
+    #cell_mean_X = sum_cell(X, mask) / cell_num_elems[:,:,np.newaxis]
     # THE FOLLOWING IS THE DENOMINATOR
     # Neighborhoods are unions of adjacent (non diagonal) cells. We are
     # computing them with a toroidal topology, because it's easier and
@@ -148,14 +147,15 @@ def update_W(X, W):
                         + np.roll(cell_num_elems, shift=1, axis=1) )
     
     # neigh_mean_X, INSTEAD, IS THE NUMERATOR
-    neigh_weighted_X = cell_num_elems[:,:,np.newaxis] * cell_mean_X
-    neigh_mean_X = ( neigh_weighted_X
-                     + np.roll(neigh_weighted_X, shift=-1, axis=0)
-                     + np.roll(neigh_weighted_X, shift=1, axis=0)
-                     + np.roll(neigh_weighted_X, shift=-1, axis=1)
-                     + np.roll(neigh_weighted_X, shift=1, axis=1) )
+    cell_sum_X = sum_cell(X, mask)
+    neigh_sum_X = ( cell_sum_X
+                     + np.roll(cell_sum_X, shift=-1, axis=0)
+                     + np.roll(cell_sum_X, shift=1, axis=0)
+                     + np.roll(cell_sum_X, shift=-1, axis=1)
+                     + np.roll(cell_sum_X, shift=1, axis=1) )
     # Update weights
-    return neigh_mean_X / neigh_num_elems[:,:,np.newaxis]
+    # CHECK DIVISION BY ZERO!!!
+    return neigh_sum_X / neigh_num_elems[:,:,np.newaxis]
 
 
 def update_W_e(X, W):
@@ -210,10 +210,9 @@ if __name__ == '__main__':
     X, labels, _ = dp.polygon_clusters_dataset()
     indices = np.random.randint(0, X.shape[0], size=height * width)
     W = X[indices,:].reshape((height, width, -1))
-    print(W.shape)
     
     for t in range(15):
-        W = update_W_e(X, W)
+        W = update_W(X, W)
         
 #     print(np.all(np.isclose(W1, W2, atol=10**-5)))
     pyplot.figure('U-Matrix and Input Space Scenario')
