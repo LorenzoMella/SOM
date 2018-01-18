@@ -90,9 +90,14 @@ def voronoi_cells(X, W):
     """
     max_samples, _ = X.shape
     height, width, _ = W.shape
+    # Due to reshaping, this is a matrix whose [p,n] entry is the sq_distance
+    # between p-th prototype (linearized order) and the n-th datapoint
     prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     num_prototypes, _ = prototype_sample_dists.shape
+    # For each n find the index p of the closest prototype to X[n,:]
     closest_prototype = np.argmin(prototype_sample_dists, axis=0)
+    # Convert each entry of closest_prototypes into an indicator vector of the
+    # correct index
     indexes = np.arange(num_prototypes)
     mask = np.equal(closest_prototype, indexes[:,np.newaxis])
     return mask.reshape(height, width, max_samples)
@@ -214,7 +219,6 @@ if __name__ == '__main__':
     for t in range(15):
         W = update_W(X, W)
         
-#     print(np.all(np.isclose(W1, W2, atol=10**-5)))
     pyplot.figure('U-Matrix and Input Space Scenario')
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
