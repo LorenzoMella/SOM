@@ -1,7 +1,7 @@
 #############################
-#                           #
 #   Vector Quantization     #
 #                           #
+#   Author: Lorenzo Mella   #
 #############################
 
 

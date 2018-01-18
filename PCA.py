@@ -1,10 +1,8 @@
-#===========================================#
-#        Principal Component Analysis       #
-#                                           #
-#        Author: Lorenzo Mella              #
-#        Version: 2017-11-27                #
-#    Tested on: Python 3.6.3/numpy 1.13.3   #
-#===========================================#
+#====================================#
+#    Principal Component Analysis    #
+#                                    #
+#       Author: Lorenzo Mella        #
+#====================================#
 
 
 import numpy as np

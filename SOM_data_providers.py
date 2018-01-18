@@ -2,7 +2,6 @@
 #        SOM Data Providers                 #
 #                                           #
 #        Author: Lorenzo Mella              #
-#        Version: 2017-12-01                #
 #===========================================#
 
 
@@ -72,7 +71,7 @@ def polygon_clusters_dataset(std=1):
                 idx = 20*(4*i+2*j+k)
                 X[idx:idx+20,:] = ( np.array([ii[i,j,k],jj[i,j,k],kk[i,j,k]])
                                 + std * np.random.randn(samples_per_cluster,3) )
-    # Given how the data is ordered, generate labels
+    # Given the way the data is indexed, generate labels
     labels = np.array([n // samples_per_cluster for n in range(max_samples)])
     return X, labels, 'polygon'
 
@@ -109,8 +108,7 @@ def linked_rings_dataset(std=1):
 
 
 def mnist_dataset():
-    """ Works with all MNIST (vanilla) files. Training and test, images and
-        labels.
+    """ Works with all MNIST (vanilla) files (training and test).
         
         Returns:
         -------
@@ -161,11 +159,19 @@ def extract_idx(path):
 
 
 def mnist_dataset_PCA(dim=None):
+    """ Same as mnist_dataset but the data is represented as the first dim
+        principal components (all if dim is None or an unreasonable value
+        
+        Returns:
+        -------
+        ndarray (dtype=numpy.float64)
+    """
     from PCA import principal_components
     X_raw, labels, _ = mnist_dataset()
+    max_features = X_raw.shape[1]
     # If not specified, use the same dimensionality as the original data
-    if dim == None:
-        dim = X_raw.shape[1]
+    if dim == None or dim < 0 or dim > max_features:
+        dim = max_features
     dataset_name = 'MNIST_PCA%03d' % (dim,)
     X, _ = principal_components(X_raw, dim)
     return X, labels, dataset_name

@@ -2,9 +2,6 @@
 #        Self-Organizing Maps               #
 #                                           #
 #        Author: Lorenzo Mella              #
-#        Version: 2017-12-04                #
-#    Tested on: Python 2.7.6/numpy 1.13.3   #
-#               Python 3.6.3/numpy 1.13.3   #
 #===========================================#
 
 

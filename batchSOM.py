@@ -2,7 +2,6 @@
 #        SOM - Batch Map version            #
 #                                           #
 #        Author: Lorenzo Mella              #
-#    Tested on: Python 3.6.4/numpy 1.13     #
 #===========================================#
 
 
@@ -73,6 +72,7 @@ def time_m(max_iter, max_samples):
 def equal_results(decimal_places=10):
     W = np.random.randn(50, 49, 11)
     X = np.random.randn(10000, 11)
+    
     sq_dist_m = sq_distances_m(X,W)
     sq_dist_v = sq_distances_v(X,W)
     sq_dist_equal = np.all( np.isclose(sq_dist_m, sq_dist_v,
@@ -80,7 +80,16 @@ def equal_results(decimal_places=10):
     vor_v = voronoi_cells(X, W)
     vor_m = voronoi_cells(X, W)
     vor_equal = np.all( np.equal(vor_m, vor_v) )
-    return sq_dist_equal, vor_equal
+    
+    W1 = W
+    W2 = np.copy(W)
+    
+    W1_new = update_W(X, W1)
+    W2_new = update_W_e(X, W2)
+    
+    update_equal = np.all( np.equal(W1_new, W2.new) )
+    
+    return sq_dist_equal, vor_equal, update_equal
 
 
 def voronoi_cells(X, W):
@@ -104,10 +113,14 @@ def voronoi_cells(X, W):
 
 
 def voronoi_cells_e(X, W):
+    """ Elementary version of voronoi_cells. For testing purposes.
+    """
     max_samples, _ = X.shape
     height, width, _ = W.shape
     prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     closest_prototype = np.argmin(prototype_sample_dists, axis=0)
+    num_prototypes, _ = prototype_sample_dists.shape
+    mask = np.empty((num_prototypes, max_samples))
     for n in range(max_samples):
         for p in range(height, width):
             mask[p,n] = closest_prototype[n] == p
@@ -140,27 +153,40 @@ def sum_cell_e(X, mask):
 def update_W(X, W):
     mask = voronoi_cells(X, W)
     cell_num_elems = np.sum(mask, axis=-1)
-    #cell_mean_X = sum_cell(X, mask) / cell_num_elems[:,:,np.newaxis]
-    # THE FOLLOWING IS THE DENOMINATOR
-    # Neighborhoods are unions of adjacent (non diagonal) cells. We are
-    # computing them with a toroidal topology, because it's easier and
-    # empirically shown as more convenient
+    # Neighborhoods are unions of adjacent cells. We are
+    # computing them using a toroidal topology, because it's easier and
+    # empirically shown as more meningful on the output-space borders
     neigh_num_elems = ( cell_num_elems
                         + np.roll(cell_num_elems, shift=-1, axis=0)
                         + np.roll(cell_num_elems, shift=1, axis=0)
                         + np.roll(cell_num_elems, shift=-1, axis=1)
-                        + np.roll(cell_num_elems, shift=1, axis=1) )
-    
-    # neigh_mean_X, INSTEAD, IS THE NUMERATOR
+                        + np.roll(cell_num_elems, shift=1, axis=1)
+                        + np.roll(cell_num_elems, shift=(-1,-1), axis=(0,1))
+                        + np.roll(cell_num_elems, shift=(-1,1), axis=(0,1))
+                        + np.roll(cell_num_elems, shift=(1,-1), axis=(0,1))
+                        + np.roll(cell_num_elems, shift=(1,1), axis=(0,1)) )
+    print('neigh_num_elems.dtype = %s' % (neigh_num_elems.dtype,))
+    # neigh_mean_X
     cell_sum_X = sum_cell(X, mask)
     neigh_sum_X = ( cell_sum_X
-                     + np.roll(cell_sum_X, shift=-1, axis=0)
-                     + np.roll(cell_sum_X, shift=1, axis=0)
-                     + np.roll(cell_sum_X, shift=-1, axis=1)
-                     + np.roll(cell_sum_X, shift=1, axis=1) )
+                    + np.roll(cell_sum_X, shift=-1, axis=0)
+                    + np.roll(cell_sum_X, shift=1, axis=0)
+                    + np.roll(cell_sum_X, shift=-1, axis=1)
+                    + np.roll(cell_sum_X, shift=1, axis=1)
+                    + np.roll(cell_sum_X, shift=(-1,-1), axis=(0,1))
+                    + np.roll(cell_sum_X, shift=(-1,1), axis=(0,1))
+                    + np.roll(cell_sum_X, shift=(1,-1), axis=(0,1))
+                    + np.roll(cell_sum_X, shift=(1,1), axis=(0,1)) )
     # Update weights
-    # CHECK DIVISION BY ZERO!!!
-    return neigh_sum_X / neigh_num_elems[:,:,np.newaxis]
+    neigh_not_empty = np.nonzero(neigh_num_elems)
+    print(cell_num_elems)
+    
+    #print('neigh_not_empty.shape = %s' % (neigh_not_empty.shape,))
+    #print('neigh_not_empty all True? %s' % (np.all(neigh_not_empty == True),))
+    #print('neigh_sum_X[neigh_not_empty].shape = %s' % (neigh_sum_X[neigh_not_empty].shape,))
+    #W[neigh_not_empty,:] = ( neigh_sum_X[neigh_not_empty]
+                           #/ neigh_num_elems[neigh_not_empty][:,:, np.newaxis] )
+    return W
 
 
 def update_W_e(X, W):
@@ -188,8 +214,6 @@ def update_W_e(X, W):
                                      + cell_num_elems[i+2,j]
                                      + cell_num_elems[i+2,j+1]
                                      + cell_num_elems[i+2,j+2] )
-    
-    # neigh_mean_X, INSTEAD, IS THE NUMERATOR
     neigh_sum_X = np.zeros((height, width, max_features))
     for i in range(height):
         for j in range(width):
@@ -202,12 +226,12 @@ def update_W_e(X, W):
                                    + cell_sum_X[i+2,j,:]
                                    + cell_sum_X[i+2,j+1,:]
                                    + cell_sum_X[i+2,j+2,:] )
-
     # Update weights
     W_new = np.empty(W.shape)
     for i in range(height):
         for j in range(width):
-            W_new[i,j,:] = neigh_sum_X[i,j,:] / neigh_num_elems[i,j]
+            if neigh_num_elems[i,j] != 0:
+                W_new[i,j,:] = neigh_sum_X[i,j,:] / neigh_num_elems[i,j]
     return W_new
 
 
