@@ -14,9 +14,6 @@ from mpl_toolkits.mplot3d import Axes3D
 from SOM import batch_dot, umatrix, plot_data_and_prototypes
 import SOM_data_providers as dp
 
-height = 50
-width = 49
-
 # Find all the distances between prototypes and data-points
 # The end-result is another 3-array. The first two indices yield the neuron
 # position. The third index spans the distances from said neuron to all
@@ -183,7 +180,8 @@ def update_W(X, W):
     
     #print('neigh_not_empty.shape = %s' % (neigh_not_empty.shape,))
     #print('neigh_not_empty all True? %s' % (np.all(neigh_not_empty == True),))
-    #print('neigh_sum_X[neigh_not_empty].shape = %s' % (neigh_sum_X[neigh_not_empty].shape,))
+    #print('neigh_sum_X[neigh_not_empty].shape = %s'
+    #      % (neigh_sum_X[neigh_not_empty].shape,))
     #W[neigh_not_empty,:] = ( neigh_sum_X[neigh_not_empty]
                            #/ neigh_num_elems[neigh_not_empty][:,:, np.newaxis] )
     return W
@@ -241,15 +239,69 @@ def update_W_e(X, W):
     return W_new
 
 
+def update_W_smooth(X, W, sigma2=16.0):
+    max_samples, _ = X.shape
+    height, width, max_features = W.shape
+    weighted_sum_X = np.zeros((height, width, max_features))
+    weight_sum = np.zeros((height, width))
+    sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    winning_neurons = np.argmin(sq_dists, axis=0)
+    i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
+    ii, jj = np.ogrid[:height, :width]
+    output_sq_dist = ( (ii[...,np.newaxis] - i_win)**2
+                     + (jj[...,np.newaxis] - j_win)**2 )
+    h = np.exp( -0.5 * output_sq_dist / sigma2 )
+    weighted_sum_X = np.dot(h, X)
+    weight_sum = np.sum(h, axis=-1)
+    return weighted_sum_X / weight_sum[:,:,np.newaxis]
+
+
+def update_W_smooth_e(X, W, sigma2=16.0):
+    max_samples, _ = X.shape
+    height, width, max_features = W.shape
+    weighted_sum_X = np.zeros((height, width, max_features))
+    weight_sum = np.zeros((height, width))
+    sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    winning_neurons = np.argmin(sq_dists, axis=0)
+    i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
+    for i in range(height):
+        for j in range(width):
+            for n in range(max_samples):
+                output_sq_dist = (i - i_win[n])**2 + (j - j_win[n])**2
+                h = np.exp( -0.5 * output_sq_dist / sigma2 )
+                weighted_sum_X[i,j,:] += h * X[n,:]
+                weight_sum[i,j] += h
+    return weighted_sum_X / weight_sum[:,:,np.newaxis]
+
+
 if __name__ == '__main__':
-    X, labels, _ = dp.polygon_clusters_dataset()
-    indices = np.random.randint(0, X.shape[0], size=height * width)
-    W = np.copy(X[indices,:].reshape((height, width, -1)))
+    # Self-Organizing Map row and column numbers
+    height = 50
+    width = 49
+    # Number of iterations of batch algorithm
+    T = 20
+    # Progressively decreasing output-space neighborhood function square-width
+    sigma2_i = (0.5 * max(height, width)) ** 2
+    sigma2_f = 16.0
+    sigma2 = lambda t,T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     
-    for t in range(15):
-        W = update_W_e(X, W)
+    #X, labels, _ = dp.linked_rings_dataset()
+    X, labels, _ = dp.polygon_clusters_dataset()
+    max_samples, max_features = X.shape
+    # Initialisation of the prototypes spherically at random
+    W = np.random.randn(height, width, max_features)
+    # Initialisation of the prototypes to match a random choice of datapoints
+    #indices = np.random.randint(0, max_samples, size=height * width)
+    #W = np.copy(X[indices,:].reshape((height, width, -1)))
+    # Initialisation as regular flat sheet oriented with the first 2 principal
+    # components of the data TBD 
+    
+    for t in range(T):
+        start = process_time()
+        W = update_W_smooth(X, W, sigma2=sigma2(t,T))
+        finish = process_time()
+        print('Iteration: %d. Update time: %f sec' % (t, finish-start))
         
-    pyplot.figure('U-Matrix and Input Space Scenario')
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
     pyplot.set_cmap('plasma')

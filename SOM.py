@@ -47,7 +47,8 @@ sigma2_ft = lambda t, T: sigma2_f
 
 # Mesh grid to compute distances
 # This precomputation trick makes sense for at most 5D grids.
-# The size obviously grows exponentially!
+# The size obviously grows exponentially! ONE COULD HOWEVER RESORT TO
+# BROADCASTING AND numpy.ogrid
 mesh_i, mesh_j = np.meshgrid(range(width), range(height), indexing='ij')
 
 def batch_dot(a, b):
