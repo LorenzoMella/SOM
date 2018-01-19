@@ -276,8 +276,8 @@ def update_W_smooth_e(X, W, sigma2=16.0):
 
 if __name__ == '__main__':
     # Self-Organizing Map row and column numbers
-    height = 50
-    width = 49
+    height = 20
+    width = 20
     # Number of iterations of batch algorithm
     T = 30
     # Progressively decreasing output-space neighborhood function square-width
@@ -285,7 +285,8 @@ if __name__ == '__main__':
     sigma2_f = 16.0
     sigma2 = lambda t,T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     
-    X, labels, _ = dp.linked_rings_dataset()
+    #X, labels, _ = dp.linked_rings_dataset()
+    X = np.hstack( (np.random.randn(1000,2), np.zeros((1000,1))) )
     #X, labels, _ = dp.polygon_clusters_dataset()
     #X, labels, _ = dp.mnist_dataset_PCA(dim=100)
     max_samples, max_features = X.shape
@@ -299,13 +300,21 @@ if __name__ == '__main__':
     ii, jj = np.ogrid[:height, :width]
     eigs, eigvs = covariance_eig(X, is_centered=False)
     # The standard deviations of X along the first two eigenvectors
-    half_length = np.sqrt(eigs[:2])
+    half_length = np.sqrt(eigs)
     # Sides of the lattice building block
-    unit_y = 2 * half_length[0] / (height-1)
-    unit_x = 2 * half_length[1] / (width-1)
+    unit_y = 2 * half_length[-1] / (height-1)
+    unit_x = 2 * half_length[-2] / (width-1)
+    print('ii.shape = %s; jj.shape = %s' % (ii.shape, jj.shape))
+    print('half_length.shape = %s' % (half_length.shape,))
+    print('unit_y = %s; unit_x = %s' % (unit_y, unit_x))
+    print('eigvs.shape = %s' % (eigvs.shape,))
     # Construction
-    W = ( (ii*unit_y - half_length[0])*eigvs[:,0] +
-          (jj*unit_x - half_length[1])*eigvs[:,1] )
+    print('(ii*unit_y - half_length[-1])[...,np.newaxis].shape = %s'
+          % ((ii*unit_y - half_length[-1])[...,np.newaxis].shape,))
+    print('(jj*unit_x - half_length[-2])[...,np.newaxis].shape = %s'
+          % ((jj*unit_x - half_length[-2])[...,np.newaxis].shape,))
+    W = ( (ii*unit_y - half_length[-1])[...,np.newaxis] * eigvs[:,-1] +
+          (jj*unit_x - half_length[-2])[...,np.newaxis] * eigvs[:,-2] )
     
     plot_data_and_prototypes(X, W)
     pyplot.show()
