@@ -70,8 +70,8 @@ def time_m(max_iter, max_samples):
 
 
 def equal_results(decimal_places=10):
-    W = np.random.randn(50, 49, 11)
-    X = np.random.randn(10000, 11)
+    X, _ = dp.polygon_clusters_dataset()
+    W = np.random.randn(50, 49, X.shape[1])
     
     sq_dist_m = sq_distances_m(X,W)
     sq_dist_v = sq_distances_v(X,W)
@@ -84,10 +84,10 @@ def equal_results(decimal_places=10):
     W1 = W
     W2 = np.copy(W)
     
-    W1_new = update_W(X, W1)
+#     W1_new = update_W(X, W1)
     W2_new = update_W_e(X, W2)
     
-    update_equal = np.all( np.equal(W1_new, W2.new) )
+    update_equal = False #np.all( np.equal(W1_new, W2.new) )
     
     return sq_dist_equal, vor_equal, update_equal
 
@@ -192,56 +192,62 @@ def update_W(X, W):
 def update_W_e(X, W):
     height, width, max_features = W.shape
     mask = voronoi_cells_e(X, W)
-    cell_num_elems = np.pad( np.sum(mask, axis=-1), pad_width=1, mode='wrap' )
-    cell_sum_X = np.pad( sum_cell_e(X, mask), pad_width=((1,1),(1,1),(0,0)),
-                        mode='wrap' )
-    cell_mean_X = np.empty((height, width, max_features))
-#     for i in range(height):
-#         for j in range(width):
-#             cell_mean_X[i,j,:] = cell_sum_X[i,j,:] / cell_num_elems[i,j]
+#     cell_num_elems = np.pad( np.sum(mask, axis=-1), pad_width=1, mode='wrap' )
+#     cell_sum_X = np.pad( sum_cell_e(X, mask), pad_width=((1,1),(1,1),(0,0)),
+#                         mode='wrap' )
+    cell_num_elems = np.sum(mask, axis=-1)
+    cell_sum_X = sum_cell_e(X, mask)
     # Neighborhoods are unions of adjacent (non diagonal) cells. We are
     # computing them with a toroidal topology, because it's easier and
     # empirically shown as more convenient
     neigh_num_elems = np.zeros((height, width))
-    for i in range(height):
-        for j in range(width):
-            neigh_num_elems[i,j] = ( cell_num_elems[i,j]
+    for i in range(1,height-1):
+        for j in range(1,width-1):
+            neigh_num_elems[i,j] = ( cell_num_elems[i-1,j-1]
+                                     + cell_num_elems[i-1,j]
+                                     + cell_num_elems[i-1,j+1]
+                                     + cell_num_elems[i,j-1]
+                                     + cell_num_elems[i,j]
                                      + cell_num_elems[i,j+1]
-                                     + cell_num_elems[i,j+2]
+                                     + cell_num_elems[i+1,j-1]
                                      + cell_num_elems[i+1,j]
-                                     + cell_num_elems[i+1,j+1]
-                                     + cell_num_elems[i+1,j+2]
-                                     + cell_num_elems[i+2,j]
-                                     + cell_num_elems[i+2,j+1]
-                                     + cell_num_elems[i+2,j+2] )
+                                     + cell_num_elems[i+1,j+1] )
+    pyplot.imshow(cell_num_elems)
+    pyplot.show()
+
+    pyplot.imshow(neigh_num_elems)
+    pyplot.show()
+    
     neigh_sum_X = np.zeros((height, width, max_features))
-    for i in range(height):
-        for j in range(width):
-            neigh_sum_X[i,j,:] = ( cell_sum_X[i,j,:]
-                                   + cell_sum_X[i,j+1,:]
-                                   + cell_sum_X[i,j+2,:]
-                                   + cell_sum_X[i+1,j,:]
-                                   + cell_sum_X[i+1,j+1,:]
-                                   + cell_sum_X[i+1,j+2,:]
-                                   + cell_sum_X[i+2,j,:]
-                                   + cell_sum_X[i+2,j+1,:]
-                                   + cell_sum_X[i+2,j+2,:] )
+    for i in range(1,height-1):
+        for j in range(1,width-1):
+            neigh_sum_X[i,j,:] = ( cell_sum_X[i-1,j-1,:]
+                                    + cell_sum_X[i-1,j,:]
+                                    + cell_sum_X[i-1,j+1,:]
+                                    + cell_sum_X[i,j-1,:]
+                                    + cell_sum_X[i,j,:]
+                                    + cell_sum_X[i,j+1,:]
+                                    + cell_sum_X[i+1,j-1,:]
+                                    + cell_sum_X[i+1,j,:]
+                                    + cell_sum_X[i+1,j+1,:] )
     # Update weights
     W_new = np.empty(W.shape)
     for i in range(height):
         for j in range(width):
             if neigh_num_elems[i,j] != 0:
                 W_new[i,j,:] = neigh_sum_X[i,j,:] / neigh_num_elems[i,j]
+            else:
+                W_new[i,j,:] = W[i,j,:]
     return W_new
 
 
 if __name__ == '__main__':
     X, labels, _ = dp.polygon_clusters_dataset()
     indices = np.random.randint(0, X.shape[0], size=height * width)
-    W = X[indices,:].reshape((height, width, -1))
+    W = np.copy(X[indices,:].reshape((height, width, -1)))
     
     for t in range(15):
-        W = update_W(X, W)
+        W = update_W_e(X, W)
         
     pyplot.figure('U-Matrix and Input Space Scenario')
     pyplot.imshow(umatrix(W))

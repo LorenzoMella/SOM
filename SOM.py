@@ -1,8 +1,8 @@
-#===========================================#
-#        Self-Organizing Maps               #
-#                                           #
-#        Author: Lorenzo Mella              #
-#===========================================#
+#======================================#
+#        Self-Organizing Maps          #
+#                                      #
+#        Author: Lorenzo Mella         #
+#======================================#
 
 
 import sys  # for command line arguments
