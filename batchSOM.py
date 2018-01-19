@@ -10,7 +10,7 @@ from time import process_time
 
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
-#from PCA import covariance_eig
+from PCA import covariance_eig
 from SOM import batch_dot, umatrix, plot_data_and_prototypes
 import SOM_data_providers as dp
 
@@ -279,26 +279,44 @@ if __name__ == '__main__':
     height = 50
     width = 49
     # Number of iterations of batch algorithm
-    T = 20
+    T = 30
     # Progressively decreasing output-space neighborhood function square-width
     sigma2_i = (0.5 * max(height, width)) ** 2
     sigma2_f = 16.0
     sigma2 = lambda t,T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     
-    #X, labels, _ = dp.linked_rings_dataset()
-    X, labels, _ = dp.polygon_clusters_dataset()
+    X, labels, _ = dp.linked_rings_dataset()
+    #X, labels, _ = dp.polygon_clusters_dataset()
+    #X, labels, _ = dp.mnist_dataset_PCA(dim=100)
     max_samples, max_features = X.shape
     # Initialisation of the prototypes spherically at random
-    W = np.random.randn(height, width, max_features)
+    #W = np.random.randn(height, width, max_features)
     # Initialisation of the prototypes to match a random choice of datapoints
     #indices = np.random.randint(0, max_samples, size=height * width)
     #W = np.copy(X[indices,:].reshape((height, width, -1)))
     # Initialisation as regular flat sheet oriented with the first 2 principal
     # components of the data TBD 
+    ii, jj = np.ogrid[:height, :width]
+    eigs, eigvs = covariance_eig(X, is_centered=False)
+    # The standard deviations of X along the first two eigenvectors
+    half_length = np.sqrt(eigs[:2])
+    # Sides of the lattice building block
+    unit_y = 2 * half_length[0] / (height-1)
+    unit_x = 2 * half_length[1] / (width-1)
+    # Construction
+    W = ( (ii*unit_y - half_length[0])*eigvs[:,0] +
+          (jj*unit_x - half_length[1])*eigvs[:,1] )
     
+    plot_data_and_prototypes(X, W)
+    pyplot.show()
+    
+    # With the MNIST data it's quicker to use a stochastic version of the
+    # algorithm. We only use 1% of the pictures.
+    batchsize = int(0.2 * max_samples)
     for t in range(T):
         start = process_time()
-        W = update_W_smooth(X, W, sigma2=sigma2(t,T))
+        X_minibatch = X[np.random.randint(max_samples, size=batchsize), :]
+        W = update_W_smooth(X_minibatch, W, sigma2=sigma2(t,T))
         finish = process_time()
         print('Iteration: %d. Update time: %f sec' % (t, finish-start))
         
@@ -306,5 +324,5 @@ if __name__ == '__main__':
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
     
-    plot_data_and_prototypes(X, W)
+    plot_data_and_prototypes(X, W, draw_data=False)
     pyplot.show()

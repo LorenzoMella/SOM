@@ -235,12 +235,17 @@ def plot_neurons():
     ax.scatter(mesh_i, mesh_j, marker='.', s=50)
     ax.set_axis_off()
 
-def plot_data_and_prototypes(X, W):
+def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
+    """ Plots only the first three components of both the data and the
+        SOM prototypes
+    """
     fig = pyplot.figure('Prototypes in the Data Space')
     ax = fig.add_subplot(111, projection='3d')
-    ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
-    ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
-    ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
+    if draw_prototypes:
+        ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
+        ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
+    if draw_data:
+        ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
     ax.set_axis_off()
 
 
