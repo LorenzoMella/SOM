@@ -203,6 +203,14 @@ def update_W(X, W, sigma2=16.0):
     # Update weights
     height, width, _ = W.shape
     W_new = np.empty(W.shape)
+    """
+    A faster alternative could look like this:
+            safe_indices = np.nonzero(neigh_num_elems)
+            unsafe_indices = np.nonzero(neigh_num_elems == 0)
+            W_new[safe_indices,:] = ( neigh_sum_X[safe_indices,:]
+                                     / neigh_num_elems[safe_indices] )
+            W_new[unsafe_indices,:] = W[unsafe_indices,:]
+    """ 
     for i in range(height):
         for j in range(width):
             if neigh_num_elems[i,j] != 0:
@@ -212,65 +220,47 @@ def update_W(X, W, sigma2=16.0):
     return W_new
 
 
-def update_W_e(X, W, sigma2=16.0):
+def update_W_e(X, W, sigma2=4.0):
     height, width, max_features = W.shape
-    mask = voronoi_cells_e(X, W)
-    cell_num_elems = np.pad( np.sum(mask, axis=-1), pad_width=1, mode='wrap' )
-    cell_sum_X = np.pad( sum_cell_e(X, mask), pad_width=((1,1),(1,1),(0,0)),
-                        mode='wrap' )
-    # cell_num_elems = np.sum(mask, axis=-1)
-    # cell_sum_X = sum_cell_e(X, mask)
-    # Neighborhoods are unions of adjacent (non diagonal) cells. We are
-    # computing them with a toroidal topology, because it's easier and
-    # empirically shown as more convenient
-    neigh_num_elems = np.zeros((height, width))
-    for i in range(height):
-        for j in range(width):
-            neigh_num_elems[i,j] = (  cell_num_elems[i,j]
-                                    + cell_num_elems[i,j+1]
-                                    + cell_num_elems[i,j+2]
-                                    + cell_num_elems[i+1,j]
-                                    + cell_num_elems[i+1,j+1]
-                                    + cell_num_elems[i+1,j+2]
-                                    + cell_num_elems[i+2,j]
-                                    + cell_num_elems[i+2,j+1]
-                                    + cell_num_elems[i+2,j+2] )
-    pyplot.imshow(cell_num_elems)
-    pyplot.show()
-    
-    pyplot.imshow(neigh_num_elems)
-    pyplot.show()
-    
+    ii, jj = np.ogrid[:height, :width]
+    # Compute matrix whose rows are Voronoi Cell indicators
+    cell_mask = voronoi_cells_e(X, W)
+    # Compute cardinalities of Voronoi Cells
+    cell_cardinality = np.sum(cell_mask, axis=-1)
+    # Vector sums of datapoints in each Voronoi Cell
+    cell_sum_X = sum_cell_e(X, cell_mask)
+    # Aggregate the cardinalities of Cells into cardinalities of neighborhoods
+    neigh_cardinality = np.zeros((height, width))
     neigh_sum_X = np.zeros((height, width, max_features))
-    for i in range(1,height-1):
-        for j in range(1,width-1):
-            neigh_sum_X[i,j,:] = (  cell_sum_X[i,j,:]
-                                  + cell_sum_X[i,j+1,:]
-                                  + cell_sum_X[i,j+2,:]
-                                  + cell_sum_X[i+1,j,:]
-                                  + cell_sum_X[i+1,j+1,:]
-                                  + cell_sum_X[i+1,j+2,:]
-                                  + cell_sum_X[i+2,j,:]
-                                  + cell_sum_X[i+2,j+1,:]
-                                  + cell_sum_X[i+2,j+2,:] )
-    print(np.mean(cell_sum_X, axis=(0,1)))
-    print(np.mean(cell_num_elems))
-    # Update weights
-    W_new = np.empty(W.shape)
+    # THIS MUST BE THE SLOW PART BUT I SUSPECT THAT MASKING OPERATIONS ARE
+    # EXPENSIVE IN GENERAL. SOMETIMES REPEATED COMPUTATIONS IN A COMPACT BLOCK
+    # LEFT TO BLAS ARE EXECUTED FASTER THAN A SEQUENCE OF "CLEVER" PREPROCESSING
+    # IDEAS...
     for i in range(height):
         for j in range(width):
-            if neigh_num_elems[i,j] != 0:
-                W_new[i,j,:] = neigh_sum_X[i,j,:] / neigh_num_elems[i,j]
-            else:
-                W_new[i,j,:] = W[i,j,:]
+            # Create a boolean matrix that is true in a circular neighborhood
+            # of (i,j)
+            neigh_mask = (ii - i)**2 + (jj - j)**2 <= sigma2
+            # Sum selected cardinalities
+            neigh_cardinality[i,j] = np.sum(neigh_mask * cell_cardinality)
+            neigh_sum_X[i,j,:] = np.dot(neigh_mask.reshape((-1,)),
+                                        cell_sum_X.reshape((-1, max_features)))
+    # Update weights (with check for division by zero, in which case the
+    # prototype is not updated)
+    W_new = np.divide( neigh_sum_X, neigh_cardinality[...,np.newaxis] )
+    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    W_new[bad_indices] = W[bad_indices]
     return W_new
 
 
-def update_W_smooth(X, W, sigma2=16.0):
+def update_W_indicators(X, W, sigma2=16.0):
+    raise NotImplementedError
     max_samples, _ = X.shape
     height, width, max_features = W.shape
     weighted_sum_X = np.zeros((height, width, max_features))
     weight_sum = np.zeros((height, width))
+    # Compute the whole neighborhood function for all winning neurons and
+    # all neurons under consideration (4 indices)
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     winning_neurons = np.argmin(sq_dists, axis=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
@@ -278,12 +268,50 @@ def update_W_smooth(X, W, sigma2=16.0):
     output_sq_dist = (  (ii[..., np.newaxis] - i_win)**2
                       + (jj[..., np.newaxis] - j_win)**2 )
     h = np.exp( -0.5 * output_sq_dist / sigma2 )
+    # "Matrix" multiplication between h and X weigths the datapoints with their
+    # respective neighborhood importance
     weighted_sum_X = np.dot(h, X)
+    # Just sum the weights themsemves to get the normalization constant
     weight_sum = np.sum(h, axis=-1)
+    # Tacitly assuming that the denominator is never zero...
+    return weighted_sum_X / weight_sum[:,:,np.newaxis]
+
+
+def update_W_smooth(X, W, sigma2=16.0):
+    max_samples, _ = X.shape
+    height, width, max_features = W.shape
+    weighted_sum_X = np.zeros((height, width, max_features))
+    weight_sum = np.zeros((height, width))
+    # Compute the whole neighborhood function for all winning neurons and
+    # all neurons under consideration (4 indices)
+    sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    winning_neurons = np.argmin(sq_dists, axis=0)
+    i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
+    ii, jj = np.ogrid[:height, :width]
+    output_sq_dist = (  (ii[..., np.newaxis] - i_win)**2
+                      + (jj[..., np.newaxis] - j_win)**2 )
+    h = np.exp( -0.5 * output_sq_dist / sigma2 )
+    """
+    We are compactly computing:
+            
+         sum( h(j,c(X[n,:])) * X[n,:] for n in range(max_samples) )
+        ------------------------------------------------------------
+             sum( h(j,c(X[n,:])) for n in range(max_samples) )
+    
+    where c(X[n,:]) is the index of the winning neuron of datapoint X[n,:].
+    """
+    # "Matrix" multiplication between h and X weigths the datapoints with their
+    # respective neighborhood importance
+    weighted_sum_X = np.dot(h, X)
+    # Just sum the weights themsemves to get the normalization constant
+    weight_sum = np.sum(h, axis=-1)
+    # Tacitly assuming that the denominator is never zero...
     return weighted_sum_X / weight_sum[:,:,np.newaxis]
 
 
 def update_W_smooth_e(X, W, sigma2=16.0):
+    """ Elementary version of update_W_smooth, for testing purposes.
+    """
     max_samples, _ = X.shape
     height, width, max_features = W.shape
     weighted_sum_X = np.zeros((height, width, max_features))
@@ -305,53 +333,54 @@ def W_PCA_initialization(X, shape=(30, 30)):
     height, width = shape
     ii, jj = np.ogrid[:height, :width]
     eigs, eigvs = covariance_eig(X, is_centered=False)
-    # We order them from largest eigenvalue to smallest
+    # We arrange them according to decreasing eigenvalue moduli
     eigs = eigs[np.flip(np.argsort(np.absolute(eigs)), axis=0)]
     eigvs = eigvs[:, np.flip(np.argsort(np.absolute(eigs)), axis=0)]
-    # Compute the half-lengths of the grid and the main unit-directions
+    # Compute the half-lengths of the grid and the spanning unit-vectors
     stds = np.sqrt(eigs[:2])
-    new_basis = eigs[:,:2]
+    new_basis = eigvs[:,:2]
     # Sides of the lattice building block
     unit_y = 2 * stds[0] / (height-1)
     unit_x = 2 * stds[1] / (width-1)
     # Mesh construction
-    W = (  (ii*unit_y - stds[0])[...,np.newaxis] * new_basis[0]
-         + (jj*unit_x - stds[1])[...,np.newaxis] * new_basis[1] )
+    W = (  (ii*unit_y - stds[0])[...,np.newaxis] * new_basis[:,0]
+         + (jj*unit_x - stds[1])[...,np.newaxis] * new_basis[:,1] )
     return W
 
 
 if __name__ == '__main__':
+    np.random.seed(0)
     # Self-Organizing Map row and column numbers
     height = 50
     width = 50
     # Number of iterations of batch algorithm
-    T = 30
+    T = 20
     # Progressively decreasing output-space neighborhood function square-width
     sigma2_i = (0.5 * max(height, width)) ** 2
-    sigma2_f = 16.0
+    sigma2_f = 1.0
     sigma2 = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     
-    # X, labels, _ = dp.linked_rings_dataset()
-    X, labels, _ = dp.polygon_clusters_dataset()
+    X, labels, _ = dp.linked_rings_dataset()
+    #X, labels, _ = dp.polygon_clusters_dataset()
     #X, labels, _ = dp.mnist_dataset_PCA(dim=100)
     max_samples, max_features = X.shape
     # Initialisation of the prototypes spherically at random
-    #W = np.random.randn(height, width, max_features)
+    W = np.random.randn(height, width, max_features)
     # Initialisation of the prototypes to match a random choice of datapoints
     #indices = np.random.randint(0, max_samples, size=height * width)
     #W = np.copy(X[indices,:].reshape((height, width, -1)))
     
     # Initialisation as regular flat sheet oriented with the first 2 principal
     # components of the data
-    W = W_PCA_initialization(X, shape=(height, width))
+    #W = W_PCA_initialization(X, shape=(height, width))
     
     # With the MNIST data it's quicker to use a stochastic version of the
     # algorithm. We only sample a fraction of the pictures.
-    batchsize = int(1.0 * max_samples)
+    batchsize = int(0.3 * max_samples)
     for t in range(T):
         start = process_time()
         X_minibatch = X[np.random.randint(max_samples, size=batchsize), :]
-        W = update_W(X_minibatch, W, sigma2=sigma2(t,T))
+        W = update_W_e(X_minibatch, W, sigma2=sigma2(t,T))
         finish = process_time()
         print('Iteration: %d. Update time: %f sec' % (t, finish-start))
     
