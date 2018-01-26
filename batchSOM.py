@@ -47,26 +47,6 @@ def sq_distances_m(X, W):
     return sq_distances
 
 
-def time_v(max_iter, max_samples):
-    W = np.random.randn(50, 49, 11)
-    X = np.random.randn(max_samples, 11)
-    start = process_time()
-    for iteration in range(max_iter):
-        sq_distances_v(X,W)
-    finish = process_time()
-    return finish - start
-
-
-def time_m(max_iter, max_samples):
-    W = np.random.randn(50, 49, 11)
-    X = np.random.randn(max_samples, 11)
-    start = process_time()
-    for iteration in range(max_iter):
-        sq_distances_m(X,W)
-    finish = process_time()
-    return finish - start
-
-
 def equal_results(decimal_places=10):
     """ Current version: first three tests are passed. Updates still yield
         different results.
@@ -221,6 +201,8 @@ def update_W(X, W, sigma2=16.0):
 
 
 def update_W_e(X, W, sigma2=4.0):
+    """ In this context, sigma2 is the hard radius of the neighborhood function
+    """
     height, width, max_features = W.shape
     ii, jj = np.ogrid[:height, :width]
     # Compute matrix whose rows are Voronoi Cell indicators
@@ -238,8 +220,8 @@ def update_W_e(X, W, sigma2=4.0):
     # IDEAS...
     for i in range(height):
         for j in range(width):
-            # Create a boolean matrix that is true in a circular neighborhood
-            # of (i,j)
+            # Create a boolean matrix: True iff in a spherical neighborhood
+            # of the neuron [i,j]
             neigh_mask = (ii - i)**2 + (jj - j)**2 <= sigma2
             # Sum selected cardinalities
             neigh_cardinality[i,j] = np.sum(neigh_mask * cell_cardinality)
@@ -348,8 +330,29 @@ def W_PCA_initialization(X, shape=(30, 30)):
     return W
 
 
+
+def parse_arguments():
+    """ IT SHOULD RETURN A LIST OF ARGUMENTS AND NOTHING MORE...
+    """
+    import argparse
+    optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
+                                                    'Batch Algorithm Version.')
+    optparser.add_argument(('-s', '--size'), nargs=2, type=int,
+                           help='height and width of the map') 
+    optparser.add_argument(('-t', '--timesteps'), nargs=1, type=int,
+                           help='number of iterations')
+    optparser.add_argument(('-m', '--minibatch'), nargs=1, default=False,
+                           help='size of minibatches (% of dataset)')
+    optparser.add_argument(('-i', '--initialisation'), nargs=1, type=str,
+                           choices=('random', 'data', 'PCA'),
+                           help='type of prototype initialisation')
+    raise NotImplementedError
+
+
 if __name__ == '__main__':
+
     np.random.seed(0)
+
     # Self-Organizing Map row and column numbers
     height = 50
     width = 50
@@ -376,11 +379,15 @@ if __name__ == '__main__':
     
     # With the MNIST data it's quicker to use a stochastic version of the
     # algorithm. We only sample a fraction of the pictures.
-    batchsize = int(0.3 * max_samples)
     for t in range(T):
         start = process_time()
-        X_minibatch = X[np.random.randint(max_samples, size=batchsize), :]
-        W = update_W_e(X_minibatch, W, sigma2=sigma2(t,T))
+        if use_minibatch:
+            batch_indices = np.random.randint(max_samples,
+                                         size=int(minibatch_rate * max_samples))
+            X_train = X[batch_indices, :]
+        else:
+            X_train = X
+        W = update_W_e(X_train, W, sigma2=sigma2(t,T))
         finish = process_time()
         print('Iteration: %d. Update time: %f sec' % (t, finish-start))
     

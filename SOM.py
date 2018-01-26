@@ -19,10 +19,6 @@ if py_version == 3 and py_subversion >= 3:
 else:
     timer = time.clock
 
-# Uncomment for testing purposes
-np.random.seed(123)
-
-
 ############################################
 # Utility functions and global parameters  #
 ############################################
@@ -255,6 +251,8 @@ def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
 ##################
 
 if __name__ == '__main__':
+    # Uncomment for testing purposes
+    np.random.seed(123)
     
     # Number of iterations (THESE RULE-OF-THUMB VALUES WORK, BUT A STOPPING
     # CRITERION IS MORE DESIRABLE. ALSO, WE WANT TO USE A GOOD PORTION OF THE
