@@ -330,64 +330,69 @@ def W_PCA_initialization(X, shape=(30, 30)):
     return W
 
 
-
-def parse_arguments():
-    """ IT SHOULD RETURN A LIST OF ARGUMENTS AND NOTHING MORE...
+def get_arguments():
+    """ Use the ArgumentParser module to deal flexibly with command-line
+        options.
     """
     import argparse
     optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
                                                     'Batch Algorithm Version.')
-    optparser.add_argument(('-s', '--size'), nargs=2, type=int,
+    optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
                            help='height and width of the map') 
-    optparser.add_argument(('-t', '--timesteps'), nargs=1, type=int,
+    optparser.add_argument('-t', '--timesteps', type=int, default=20,
                            help='number of iterations')
-    optparser.add_argument(('-m', '--minibatch'), nargs=1, default=False,
+    optparser.add_argument('-m', '--minibatch', type=float,
                            help='size of minibatches (% of dataset)')
-    optparser.add_argument(('-i', '--initialisation'), nargs=1, type=str,
-                           choices=('random', 'data', 'PCA'),
+    optparser.add_argument('-i', '--initialization', type=str,
+                           choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
-    raise NotImplementedError
-
-
+    print(optparser.parse_args())
+    
+    return optparser.parse_args()
+    
 if __name__ == '__main__':
-
     np.random.seed(0)
-
+    args = get_arguments()
     # Self-Organizing Map row and column numbers
-    height = 50
-    width = 50
+    height, width = args.size
     # Number of iterations of batch algorithm
-    T = 20
+    T = args.timesteps
+    print(T)
     # Progressively decreasing output-space neighborhood function square-width
     sigma2_i = (0.5 * max(height, width)) ** 2
     sigma2_f = 1.0
     sigma2 = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     
+    # Dataset initialization
     X, labels, _ = dp.linked_rings_dataset()
     #X, labels, _ = dp.polygon_clusters_dataset()
     #X, labels, _ = dp.mnist_dataset_PCA(dim=100)
     max_samples, max_features = X.shape
-    # Initialisation of the prototypes spherically at random
-    W = np.random.randn(height, width, max_features)
-    # Initialisation of the prototypes to match a random choice of datapoints
-    #indices = np.random.randint(0, max_samples, size=height * width)
-    #W = np.copy(X[indices,:].reshape((height, width, -1)))
     
-    # Initialisation as regular flat sheet oriented with the first 2 principal
-    # components of the data
-    #W = W_PCA_initialization(X, shape=(height, width))
+    # Initialization of the prototypes spherically at random
+    if args.initialization == 'data':
+        # As a random choice of datapoints
+        indices = np.random.randint(0, max_samples, size=height * width)
+        W = np.copy(X[indices,:].reshape((height, width, -1)))
+    elif args.initialization == 'PCA':
+        # As a regular flat sheet oriented with the first 2 principal
+        # components of the data
+        W = W_PCA_initialization(X, shape=(height, width))
+    else:
+        # Random initialization
+        W = np.random.randn(height, width, max_features)
     
-    # With the MNIST data it's quicker to use a stochastic version of the
-    # algorithm. We only sample a fraction of the pictures.
     for t in range(T):
         start = process_time()
-        if use_minibatch:
+        # In case a minibatch rate is specified, extract a random such sample
+        # of the input data
+        if args.minibatch and args.minibatch > 0. and args.minibatch <= 1.:
             batch_indices = np.random.randint(max_samples,
-                                         size=int(minibatch_rate * max_samples))
+                                         size=int(args.minibatch * max_samples))
             X_train = X[batch_indices, :]
         else:
             X_train = X
-        W = update_W_e(X_train, W, sigma2=sigma2(t,T))
+        W = update_W_smooth(X_train, W, sigma2=sigma2(t,T))
         finish = process_time()
         print('Iteration: %d. Update time: %f sec' % (t, finish-start))
     
