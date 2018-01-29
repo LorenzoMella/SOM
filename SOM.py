@@ -23,29 +23,6 @@ else:
 # Utility functions and global parameters  #
 ############################################
 
-# Lattice size
-height = 30
-width = 30
-
-# Initial values of exponentially decreasing parameters
-eta_i = 0.5
-eta_f = 0.01
-sigma2_i = ( 0.5 * max(height, width) )**2 # The squared radius of the 2d array
-sigma2_f = 9.
-
-# Learning rates
-eta_so = lambda t, T: eta_i * (eta_f / eta_i)**(t / T)
-eta_ft = lambda t, T: eta_f
-
-# Squared "width" of excitation neighborhoods of the winning neuron
-sigma2_so = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
-sigma2_ft = lambda t, T: sigma2_f
-
-# Mesh grid to compute distances
-# This precomputation trick makes sense for at most 5D grids.
-# The size obviously grows exponentially! ONE COULD HOWEVER RESORT TO
-# BROADCASTING AND numpy.ogrid
-mesh_i, mesh_j = np.meshgrid(range(width), range(height), indexing='ij')
 
 def batch_dot(a, b):
     """Array of dot products over the fastest axis of two arrays. Precisely,
@@ -57,6 +34,7 @@ def batch_dot(a, b):
 
 
 def training_phase(X, W, max_steps, phase_name, eta, sigma2, scoring_f):
+    raise NotImplementedError
     print('%s.\n----------------------' % (phase_name,))
     for t in range(max_steps):
         start = timer()
@@ -83,8 +61,13 @@ def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     # Derive all useful dimensions from W
     height, width, fan_in = W.shape
     assert x.size == fan_in
-    # Compute all neuron distances from the winning neuron
-    D2 = (mesh_i - i_win)**2 + (mesh_j - j_win)**2
+    # Create the meshgrid if required
+    if not hasattr(weight_update_vec, 'mesh_i'):
+        weight_update.mesh_i, weight_update.mesh_j = np.ogrid[:height,:width]
+    # Compute all neuron squared distances from the winning neuron
+    D2 = ( (weight_update_vec.mesh_i - i_win)**2
+         + (weight_update_vec.mesh_j - j_win)**2 )
+    # Use the squared distances to compute the neighborhood function
     h = np.exp(-0.5 * D2 / sigma2)
     # Update all the weights.
     # An axis must explicitly be added to h for correct broadcasting:
@@ -224,12 +207,6 @@ def plot_examples(indices, compute_scores):
         pyplot.colorbar()
         pyplot.set_cmap('jet')
 
-def plot_neurons():
-    fig = pyplot.figure('Neuron topology')
-    ax = fig.add_subplot(111, projection='3d', title='U-Matrix')
-    ax.plot_wireframe(mesh_i, mesh_j, 0 * mesh_i, linewidth=.3, color='k')
-    ax.scatter(mesh_i, mesh_j, marker='.', s=50)
-    ax.set_axis_off()
 
 def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
     """ Plots only the first three components of both the data and the
@@ -245,110 +222,114 @@ def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
     ax.set_axis_off()
 
 
+def get_arguments():
+    """ Use the ArgumentParser module to deal flexibly with command-line
+        options.
+    """
+    import argparse
+    optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
+                                                    'Batch Algorithm Version.')
+    optparser.add_argument('--size', nargs=2, type=int, default=[40,40],
+                           help='height and width of the map') 
+    optparser.add_argument('--timesteps', nargs=2, type=int,
+                           default=[5000,10000], help='number of iterations')
+    optparser.add_argument('--initialization', type=str,
+                           choices=('random', 'data', 'PCA'), default='random',
+                           help='type of prototype initialisation')
+    optparser.add_argument('--dataset', type=str, default='polygon',
+                           choices=('polygon','rings','iris','irisPCA','mnist',
+                                    'mnistPCA'),
+                           help='dataset to be analysed')
+    return optparser.parse_args()
+
 
 ##################
 #   Simulation   #
 ##################
 
+datasets = { 'polygon': dp.polygon_clusters_dataset,
+             'rings': dp.linked_rings_dataset,
+             'iris':  dp.iris_dataset,
+             'irisPCA': dp.iris_dataset_PCA,
+             'mnist': dp.mnist_dataset,
+             'mnistPCA': lambda: dp.mnist_dataset_PCA(dim=100) }
+
+
 if __name__ == '__main__':
     # Uncomment for testing purposes
     np.random.seed(123)
     
-    # Number of iterations (THESE RULE-OF-THUMB VALUES WORK, BUT A STOPPING
-    # CRITERION IS MORE DESIRABLE. ALSO, WE WANT TO USE A GOOD PORTION OF THE
-    # DATA OR, IF REASONABLE, SCANNING THE WHOLE DATASET MULTIPLE TIMES)
+    # Retrieve the command-line arguments
+    args = get_arguments()
     
-    # Defaults
-    max_steps_so = 5000
-    max_steps_ft = 1250000
+    height, width = args.size
+    max_steps_so, max_steps_ft = args.timesteps
+
+    # Initial values of exponentially decreasing parameters
+    eta_i = 0.5
+    eta_f = 0.01
+    sigma2_i = ( 0.5 * max(height, width) )**2 # Squared radius of the 2d array
+    sigma2_f = 9.
+    
+    # Learning rates
+    eta_so = lambda t, T: eta_i * (eta_f / eta_i)**(t / T)
+    eta_ft = lambda t, T: eta_f
+    
+    # Squared "width" of excitation neighborhoods of the winning neuron
+    sigma2_so = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
+    sigma2_ft = lambda t, T: sigma2_f
+    
     compute_scores = compute_sq_distances
     weight_update = weight_update_vec
-    optimizer_mode = 'argmin'   # argmax of scalar products
-    # Updates of defaults based on command line arguments
-    if len(sys.argv) >= 2: max_steps_so = int(sys.argv[1])
-    if len(sys.argv) >= 3: max_steps_ft = int(sys.argv[2])
-    if len(sys.argv) >= 4:
-        assert sys.argv[3] in ['dot_vec', 'dot_elem', 'sq_vec', 'sq_elem']
-        if sys.argv[3] == 'dot_elem': compute_scores = compute_scores_elem
-        elif sys.argv[3] == 'dot_vec': compute_scores = compute_scores_vec
-        elif sys.argv[3] == 'sq_vec': compute_scores = compute_sq_distances
-        elif sys.argv[3] == 'sq_elem': compute_scores = compute_sq_distances_elem
-        if sys.argv[3] in ['dot_elem', 'sq_elem']:
-            weight_update = weight_update_vec
-        # argmin of squared distances
-        optimizer_mode = 'argmin' if sys.argv[3] in ['sq_vec', 'sq_elem'] \
-                          else 'argmax'
-    
+    optimizer_mode = 'argmin'   # (choose 'argmax' for scalar products)
+
     # Load the data-file into the "design matrix"
-    # THIS COMMENTING-OUT THING IS HORRIBLE
-    X, labels, dataset_name = (
-#                                dp.polygon_clusters_dataset()
-                               dp.linked_rings_dataset()
-#                                dp.iris_dataset()
-#                                dp.iris_dataset_PCA()
-#                                dp.mnist_dataset()
-#                                dp.mnist_dataset_PCA(dim=100)
-                              )
+    X, labels, dataset_name = datasets[args.dataset]()
     
     max_samples, fan_in = X.shape
     print('Number of examples: %d \nNumber of features: %d\n' % X.shape)
 
+    # Initialize network weights WORK IN PROGRESS
+    if args.initialization == 'random':
+        W = np.random.randn(height, width, fan_in)
 
-    # Initialize network weights (A BETTER WAY IS TO USE THE DATAPOINTS THEMSELVES)
-    W_init = np.random.randn(height, width, fan_in)
-    random_state = np.random.get_state()
-    fig_num = 1
-    steps_list = [0, 100, 200, 500, 1000, 2000, 5000]
-    for max_steps_so in steps_list:
-        np.random.set_state(random_state)
-        W = W_init
-    
-        # Self-organizing phase
-        print('Self-organizing phase.\n----------------------')
-        for t in range(max_steps_so):
-            start = timer()
-            # Draw random input
-            sample_x = X[np.random.randint(0,max_samples),:]
-            # Compute winning neuron coordinates
-            scores = compute_scores(W, sample_x)
-            i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-            # Single parameter update
-            W = weight_update(W, sample_x, i_win, j_win, eta_so(t,max_steps_so),
-                              sigma2_so(t, max_steps_so))
-            finish = timer()
-            if t % 500 == 0:
-                # Avg squared error refers to sq-distance between data-point and
-                # its most responsive ('winning') neuron
-                print('Iteration no. %d. Duration (one update): %.3f ms'
-                      % (t, 1000.*(finish - start)))
-    
-    
-        # Fine-tuning phase
-        print('Fine-tuning phase.\n------------------')
-        for t in range(max_steps_ft):
-            start = timer()
-            # Draw random input
-            sample_x = X[np.random.randint(0,max_samples),:]
-            # Compute winning neuron coordinates
-            scores = compute_scores(W, sample_x)
-            i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-            # Single parameter update
-            W = weight_update(W, sample_x, i_win, j_win, eta_ft(t, max_steps_ft),
-                              sigma2_ft(t, max_steps_ft))
-            finish = timer()
-            if t % 500 == 0:
-                print('Iteration no. %d. Duration (one update): %.3f ms'
-                      % (t, 1000.*(finish - start)))
-    
-        fig = pyplot.figure('U-matrix progression')
-        ax = fig.add_subplot(1, len(steps_list), fig_num,
-                             title='%d iterations' % max_steps_so)
-        fig_num += 1
-        pyplot.imshow(umatrix(W))
-        ax.set_axis_off()
-        pyplot.set_cmap('plasma')
-    
-    pyplot.show()
+    # Self-organizing phase
+    print('Self-organizing phase.\n----------------------')
+    for t in range(max_steps_so):
+        start = timer()
+        # Draw random input
+        sample_x = X[np.random.randint(0,max_samples),:]
+        # Compute winning neuron coordinates
+        scores = compute_scores(W, sample_x)
+        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
+        # Single parameter update
+        W = weight_update(W, sample_x, i_win, j_win, eta_so(t,max_steps_so),
+                          sigma2_so(t, max_steps_so))
+        finish = timer()
+        if t % 500 == 0:
+            # Avg squared error refers to sq-distance between data-point and
+            # its most responsive ('winning') neuron
+            print('Iteration no. %d. Duration (one update): %.3f ms'
+                  % (t, 1000.*(finish - start)))
+
+
+    # Fine-tuning phase
+    print('Fine-tuning phase.\n------------------')
+    for t in range(max_steps_ft):
+        start = timer()
+        # Draw random input
+        sample_x = X[np.random.randint(0,max_samples),:]
+        # Compute winning neuron coordinates
+        scores = compute_scores(W, sample_x)
+        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
+        # Single parameter update
+        W = weight_update(W, sample_x, i_win, j_win, eta_ft(t, max_steps_ft),
+                          sigma2_ft(t, max_steps_ft))
+        finish = timer()
+        if t % 500 == 0:
+            print('Iteration no. %d. Duration (one update): %.3f ms'
+                  % (t, 1000.*(finish - start)))
+
     
 #     Save the matrix as a binary file
 #     filename = ( 'weights_%s_s%d-%d-%d_i%d-%d%s.npy' % (dataset_name,
@@ -367,7 +348,6 @@ if __name__ == '__main__':
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
     
-    plot_neurons()
     plot_data_and_prototypes(X, W)
     pyplot.show()
     

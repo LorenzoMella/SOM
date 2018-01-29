@@ -204,7 +204,8 @@ def update_W_e(X, W, sigma2=4.0):
     """ In this context, sigma2 is the hard radius of the neighborhood function
     """
     height, width, max_features = W.shape
-    ii, jj = np.ogrid[:height, :width]
+    if not hasattr(update_W_e, 'ii'):
+        update_W_e.ii, update_W_e.jj = np.ogrid[:height, :width]
     # Compute matrix whose rows are Voronoi Cell indicators
     cell_mask = voronoi_cells_e(X, W)
     # Compute cardinalities of Voronoi Cells
@@ -212,17 +213,17 @@ def update_W_e(X, W, sigma2=4.0):
     # Vector sums of datapoints in each Voronoi Cell
     cell_sum_X = sum_cell_e(X, cell_mask)
     # Aggregate the cardinalities of Cells into cardinalities of neighborhoods
-    neigh_cardinality = np.zeros((height, width))
-    neigh_sum_X = np.zeros((height, width, max_features))
     # THIS MUST BE THE SLOW PART BUT I SUSPECT THAT MASKING OPERATIONS ARE
     # EXPENSIVE IN GENERAL. SOMETIMES REPEATED COMPUTATIONS IN A COMPACT BLOCK
     # LEFT TO BLAS ARE EXECUTED FASTER THAN A SEQUENCE OF "CLEVER" PREPROCESSING
     # IDEAS...
+    neigh_cardinality = np.zeros((height, width))
+    neigh_sum_X = np.zeros((height, width, max_features))
     for i in range(height):
         for j in range(width):
             # Create a boolean matrix: True iff in a spherical neighborhood
             # of the neuron [i,j]
-            neigh_mask = (ii - i)**2 + (jj - j)**2 <= sigma2
+            neigh_mask = (update_W_e.ii-i)**2 + (update_W_e.jj-j)**2 <= sigma2
             # Sum selected cardinalities
             neigh_cardinality[i,j] = np.sum(neigh_mask * cell_cardinality)
             neigh_sum_X[i,j,:] = np.dot(neigh_mask.reshape((-1,)),
@@ -337,19 +338,18 @@ def get_arguments():
     import argparse
     optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
                                                     'Batch Algorithm Version.')
-    optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
+    optparser.add_argument('--size', nargs=2, type=int, default=[40,40],
                            help='height and width of the map') 
-    optparser.add_argument('-t', '--timesteps', type=int, default=20,
+    optparser.add_argument('--timesteps', type=int, default=20,
                            help='number of iterations')
-    optparser.add_argument('-m', '--minibatch', type=float,
+    optparser.add_argument('--minibatch', type=float,
                            help='size of minibatches (% of dataset)')
-    optparser.add_argument('-i', '--initialization', type=str,
+    optparser.add_argument('--initialization', type=str,
                            choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
-    print(optparser.parse_args())
-    
     return optparser.parse_args()
-    
+
+
 if __name__ == '__main__':
     np.random.seed(0)
     args = get_arguments()
