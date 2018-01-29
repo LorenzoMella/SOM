@@ -142,14 +142,13 @@ def sum_cell_e(X, mask):
     return cell_sum_X
 
 
-def update_W(X, W, sigma2=16.0):
+def update_W_indicators_vc():
+    raise NotImplementedError
+
+def update_W_smooth_vc(X, W, sigma2=16.0):
     mask = voronoi_cells(X, W)
     cell_num_elems = np.sum(mask, axis=-1)
-    # Neighborhoods are unions of adjacent cells. We are
-    # computing them using a toroidal topology, because it's easier and
-    # empirically shown as more meningful on the output-space borders
-    # DESPITE THIS, A SQUARE TOPOLOGY WITH BARRIERS SHOULD BE IMPLEMENTED WITH
-    # HIGHER PRIORITY
+    # Neighborhoods are unions of adjacent cells.
     neigh_num_elems = ( cell_num_elems
                         + np.roll(cell_num_elems, shift=-1, axis=0)
                         + np.roll(cell_num_elems, shift=1, axis=0)
@@ -174,38 +173,20 @@ def update_W(X, W, sigma2=16.0):
     neigh_not_empty = np.nonzero(neigh_num_elems)
     print(np.mean(cell_sum_X, axis=(0,1)))
     print(np.mean(cell_num_elems))
-    #print('neigh_not_empty.shape = %s' % (neigh_not_empty.shape,))
-    #print('neigh_not_empty all True? %s' % (np.all(neigh_not_empty == True),))
-    #print('neigh_sum_X[neigh_not_empty].shape = %s'
-    #      % (neigh_sum_X[neigh_not_empty].shape,))
-    #W[neigh_not_empty,:] = ( neigh_sum_X[neigh_not_empty]
-                           #/ neigh_num_elems[neigh_not_empty][:,:, np.newaxis] )
     # Update weights
-    height, width, _ = W.shape
-    W_new = np.empty(W.shape)
-    """
-    A faster alternative could look like this:
-            safe_indices = np.nonzero(neigh_num_elems)
-            unsafe_indices = np.nonzero(neigh_num_elems == 0)
-            W_new[safe_indices,:] = ( neigh_sum_X[safe_indices,:]
-                                     / neigh_num_elems[safe_indices] )
-            W_new[unsafe_indices,:] = W[unsafe_indices,:]
-    """ 
-    for i in range(height):
-        for j in range(width):
-            if neigh_num_elems[i,j] != 0:
-                W_new[i,j,:] = neigh_sum_X[i,j,:] / neigh_num_elems[i,j]
-            else:
-                W_new[i,j,:] = W[i,j,:]
+    W_new = np.divide( neigh_sum_X, neigh_cardinality[...,np.newaxis] )
+    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    W_new[bad_indices] = W[bad_indices]
     return W_new
 
 
-def update_W_e(X, W, sigma2=4.0):
+def update_W_indicators_vc_e(X, W, sigma2=4.0):
     """ In this context, sigma2 is the hard radius of the neighborhood function
     """
+    self = update_W_indicators_vc_e
     height, width, max_features = W.shape
-    if not hasattr(update_W_e, 'ii'):
-        update_W_e.ii, update_W_e.jj = np.ogrid[:height, :width]
+    if not hasattr(self, 'ii'):
+        self.ii, self.jj = np.ogrid[:height, :width]
     # Compute matrix whose rows are Voronoi Cell indicators
     cell_mask = voronoi_cells_e(X, W)
     # Compute cardinalities of Voronoi Cells
@@ -223,7 +204,7 @@ def update_W_e(X, W, sigma2=4.0):
         for j in range(width):
             # Create a boolean matrix: True iff in a spherical neighborhood
             # of the neuron [i,j]
-            neigh_mask = (update_W_e.ii-i)**2 + (update_W_e.jj-j)**2 <= sigma2
+            neigh_mask = (self.ii - i)**2 + (self.jj - j)**2 <= sigma2
             # Sum selected cardinalities
             neigh_cardinality[i,j] = np.sum(neigh_mask * cell_cardinality)
             neigh_sum_X[i,j,:] = np.dot(neigh_mask.reshape((-1,)),
@@ -237,43 +218,52 @@ def update_W_e(X, W, sigma2=4.0):
 
 
 def update_W_indicators(X, W, sigma2=16.0):
-    raise NotImplementedError
     max_samples, _ = X.shape
     height, width, max_features = W.shape
     weighted_sum_X = np.zeros((height, width, max_features))
     weight_sum = np.zeros((height, width))
     # Compute the whole neighborhood function for all winning neurons and
-    # all neurons under consideration (4 indices)
+    # all neurons under consideration
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     winning_neurons = np.argmin(sq_dists, axis=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
     ii, jj = np.ogrid[:height, :width]
     output_sq_dist = (  (ii[..., np.newaxis] - i_win)**2
                       + (jj[..., np.newaxis] - j_win)**2 )
-    h = np.exp( -0.5 * output_sq_dist / sigma2 )
+    h = (output_sq_dist <= sigma2)
     # "Matrix" multiplication between h and X weigths the datapoints with their
     # respective neighborhood importance
     weighted_sum_X = np.dot(h, X)
     # Just sum the weights themsemves to get the normalization constant
     weight_sum = np.sum(h, axis=-1)
     # Tacitly assuming that the denominator is never zero...
-    return weighted_sum_X / weight_sum[:,:,np.newaxis]
+    W_new = np.divide( weighted_sum_X, weight_sum[:,:,np.newaxis] )
+    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    W_new[bad_indices] = W[bad_indices]
+    return W_new
 
 
 def update_W_smooth(X, W, sigma2=16.0):
+    from scipy.stats import t
     max_samples, _ = X.shape
     height, width, max_features = W.shape
     weighted_sum_X = np.zeros((height, width, max_features))
     weight_sum = np.zeros((height, width))
     # Compute the whole neighborhood function for all winning neurons and
-    # all neurons under consideration (4 indices)
+    # all neurons under consideration
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     winning_neurons = np.argmin(sq_dists, axis=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
     ii, jj = np.ogrid[:height, :width]
+    # This is what is computed here:
+    #   output_sq_dist[i,j,n] = sq-distance of (i,j) from the winning neuron
+    #                           coordinates, relative to input n
     output_sq_dist = (  (ii[..., np.newaxis] - i_win)**2
                       + (jj[..., np.newaxis] - j_win)**2 )
     h = np.exp( -0.5 * output_sq_dist / sigma2 )
+    # Other choices: Cauchy and Student's t pdfs as neighborhood functions
+    #h = 1. / (1. + (output_sq_dist / sigma2)**2)
+    #h = t(sigma2).pdf(np.sqrt(output_sq_dist))
     """
     We are compactly computing:
             
@@ -288,8 +278,12 @@ def update_W_smooth(X, W, sigma2=16.0):
     weighted_sum_X = np.dot(h, X)
     # Just sum the weights themsemves to get the normalization constant
     weight_sum = np.sum(h, axis=-1)
-    # Tacitly assuming that the denominator is never zero...
-    return weighted_sum_X / weight_sum[:,:,np.newaxis]
+    # Protection against division by zero
+    W_new = np.divide( weighted_sum_X, weight_sum[:,:,np.newaxis] )
+    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    if np.any(bad_indices): print('Possible overflow or division by zero')
+    W_new[bad_indices] = W[bad_indices]
+    return W_new
 
 
 def update_W_smooth_e(X, W, sigma2=16.0):
@@ -338,35 +332,56 @@ def get_arguments():
     import argparse
     optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
                                                     'Batch Algorithm Version.')
-    optparser.add_argument('--size', nargs=2, type=int, default=[40,40],
+    optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
                            help='height and width of the map') 
-    optparser.add_argument('--timesteps', type=int, default=20,
+    optparser.add_argument('-t', '--timesteps', type=int, default=20,
                            help='number of iterations')
-    optparser.add_argument('--minibatch', type=float,
+    optparser.add_argument('-m', '--minibatch', type=float,
                            help='size of minibatches (% of dataset)')
-    optparser.add_argument('--initialization', type=str,
+    optparser.add_argument('-i', '--initialization', type=str,
                            choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
+    optparser.add_argument('-a', '--algorithm', type=str, default='smooth',
+                           choices=('smooth', 'smooth_e', 'indicators',
+                                    'indicators_vc', 'indicators_vc_e'),
+                           help='height and width of the map')
+    optparser.add_argument('-d', '--dataset', type=str, default='polygon',
+                           choices=('polygon','rings','iris','irisPCA','mnist',
+                                    'mnistPCA'),
+                           help='dataset to be analysed')
     return optparser.parse_args()
 
 
 if __name__ == '__main__':
     np.random.seed(0)
+    
+    algorithms = { 'smooth': update_W_smooth,
+                   'smooth_e': update_W_smooth_e,
+                   'indicators':  update_W_indicators,
+                   # indicators_vc is still WIP
+                   'indicators_vc': update_W_indicators_vc,
+                   'indicators_vc_e': update_W_indicators_vc_e }
+    
+    datasets = { 'polygon': dp.polygon_clusters_dataset,
+             'rings': dp.linked_rings_dataset,
+             'iris':  dp.iris_dataset,
+             'irisPCA': dp.iris_dataset_PCA,
+             'mnist': dp.mnist_dataset,
+             'mnistPCA': lambda: dp.mnist_dataset_PCA(dim=100) }
+    
     args = get_arguments()
     # Self-Organizing Map row and column numbers
     height, width = args.size
     # Number of iterations of batch algorithm
     T = args.timesteps
-    print(T)
+    # Choice of weight update algorithm
+    update_W = algorithms[args.algorithm]
     # Progressively decreasing output-space neighborhood function square-width
     sigma2_i = (0.5 * max(height, width)) ** 2
-    sigma2_f = 1.0
+    sigma2_f = 4.0
     sigma2 = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
-    
     # Dataset initialization
-    X, labels, _ = dp.linked_rings_dataset()
-    #X, labels, _ = dp.polygon_clusters_dataset()
-    #X, labels, _ = dp.mnist_dataset_PCA(dim=100)
+    X, labels, _ = datasets[args.dataset]()
     max_samples, max_features = X.shape
     
     # Initialization of the prototypes spherically at random
@@ -392,7 +407,7 @@ if __name__ == '__main__':
             X_train = X[batch_indices, :]
         else:
             X_train = X
-        W = update_W_smooth(X_train, W, sigma2=sigma2(t,T))
+        W = update_W(X_train, W, sigma2=sigma2(t,T))
         finish = process_time()
         print('Iteration: %d. Update time: %f sec' % (t, finish-start))
     

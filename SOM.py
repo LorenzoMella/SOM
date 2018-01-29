@@ -229,14 +229,14 @@ def get_arguments():
     import argparse
     optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
                                                     'Batch Algorithm Version.')
-    optparser.add_argument('--size', nargs=2, type=int, default=[40,40],
+    optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
                            help='height and width of the map') 
-    optparser.add_argument('--timesteps', nargs=2, type=int,
+    optparser.add_argument('t', '--timesteps', nargs=2, type=int,
                            default=[5000,10000], help='number of iterations')
-    optparser.add_argument('--initialization', type=str,
+    optparser.add_argument('i', '--initialization', type=str,
                            choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
-    optparser.add_argument('--dataset', type=str, default='polygon',
+    optparser.add_argument('d', '--dataset', type=str, default='polygon',
                            choices=('polygon','rings','iris','irisPCA','mnist',
                                     'mnistPCA'),
                            help='dataset to be analysed')
