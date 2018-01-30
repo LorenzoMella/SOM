@@ -76,40 +76,50 @@ def sum_cell(X, mask):
     return np.dot(mask, X)
 
 
-def update_W_indicators_vc():
-    raise NotImplementedError
-
-def update_W_smooth_vc(X, W, sigma2=16.0):
+def update_W_indicators_vc(X, W, sigma2=16.0):
+    self = update_W_smooth_vc
+    height, width, max_features = W.shape
+    if not hasattr(self, 'D2'):
+        # Create a grid of
+        ii, jj = np.ogrid[:height, :width]
+        self.D2 = (  (ii[...,np.newaxis,np.newaxis] - ii)**2
+                   + (jj[...,np.newaxis,np.newaxis] - jj)**2 )
     mask = voronoi_cells(X, W)
     cell_num_elems = np.sum(mask, axis=-1)
-    # Neighborhoods are unions of adjacent cells.
-    neigh_num_elems = ( cell_num_elems
-                        + np.roll(cell_num_elems, shift=-1, axis=0)
-                        + np.roll(cell_num_elems, shift=1, axis=0)
-                        + np.roll(cell_num_elems, shift=-1, axis=1)
-                        + np.roll(cell_num_elems, shift=1, axis=1)
-                        + np.roll(cell_num_elems, shift=(-1,-1), axis=(0,1))
-                        + np.roll(cell_num_elems, shift=(-1,1), axis=(0,1))
-                        + np.roll(cell_num_elems, shift=(1,-1), axis=(0,1))
-                        + np.roll(cell_num_elems, shift=(1,1), axis=(0,1)) )
-    print('neigh_num_elems.dtype = %s' % (neigh_num_elems.dtype,))
-    cell_sum_X = sum_cell(X, mask)
-    neigh_sum_X = ( cell_sum_X
-                    + np.roll(cell_sum_X, shift=-1, axis=0)
-                    + np.roll(cell_sum_X, shift=1, axis=0)
-                    + np.roll(cell_sum_X, shift=-1, axis=1)
-                    + np.roll(cell_sum_X, shift=1, axis=1)
-                    + np.roll(cell_sum_X, shift=(-1,-1), axis=(0,1))
-                    + np.roll(cell_sum_X, shift=(-1,1), axis=(0,1))
-                    + np.roll(cell_sum_X, shift=(1,-1), axis=(0,1))
-                    + np.roll(cell_sum_X, shift=(1,1), axis=(0,1)) )
+    cell_sum_X = np.dot(mask, X)
+    h = self.D2 <= sigma2
+    weighted_sum_X = np.dot(h.reshape((height,width,-1)),
+                            cell_sum_X.reshape((-1,max_features)))
+    weight_sum = np.dot(h.reshape((height,width,-1)),
+                        cell_num_elems.reshape((-1,)))
     # Update weights
-    neigh_not_empty = np.nonzero(neigh_num_elems)
-    print(np.mean(cell_sum_X, axis=(0,1)))
-    print(np.mean(cell_num_elems))
-    # Update weights
-    W_new = np.divide( neigh_sum_X, neigh_cardinality[...,np.newaxis] )
+    W_new = np.divide( weighted_sum_X, weight_sum[...,np.newaxis] )
     bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    if np.any(bad_indices): print('Possible overflow or division by zero')
+    W_new[bad_indices] = W[bad_indices]
+    return W_new
+
+
+def update_W_smooth_vc(X, W, sigma2=16.0):
+    self = update_W_smooth_vc
+    height, width, max_features = W.shape
+    if not hasattr(self, 'D2'):
+        # Create a grid of
+        ii, jj = np.ogrid[:height, :width]
+        self.D2 = (  (ii[...,np.newaxis,np.newaxis] - ii)**2
+                   + (jj[...,np.newaxis,np.newaxis] - jj)**2 )
+    mask = voronoi_cells(X, W)
+    cell_num_elems = np.sum(mask, axis=-1)
+    cell_sum_X = np.dot(mask, X)
+    h = np.exp(-0.5 * self.D2 / sigma2)
+    weighted_sum_X = np.dot(h.reshape((height,width,-1)),
+                            cell_sum_X.reshape((-1,max_features)))
+    weight_sum = np.dot(h.reshape((height,width,-1)),
+                        cell_num_elems.reshape((-1,)))
+    # Update weights
+    W_new = np.divide( weighted_sum_X, weight_sum[...,np.newaxis] )
+    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    if np.any(bad_indices): print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
@@ -147,6 +157,7 @@ def update_W_indicators_vc_e(X, W, sigma2=4.0):
     # prototype is not updated)
     W_new = np.divide( neigh_sum_X, neigh_cardinality[...,np.newaxis] )
     bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    if np.any(bad_indices): print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
@@ -173,14 +184,18 @@ def update_W_indicators(X, W, sigma2=16.0):
     # Tacitly assuming that the denominator is never zero...
     W_new = np.divide( weighted_sum_X, weight_sum[:,:,np.newaxis] )
     bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
+    if np.any(bad_indices): print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
 
 def update_W_smooth(X, W, sigma2=16.0):
     from scipy.stats import t
+    self = update_W_smooth
     max_samples, _ = X.shape
     height, width, max_features = W.shape
+    if not hasattr(self, 'ii'):
+        self.ii, self.jj = np.ogrid[:height, :width]
     weighted_sum_X = np.zeros((height, width, max_features))
     weight_sum = np.zeros((height, width))
     # Compute the whole neighborhood function for all winning neurons and
@@ -188,12 +203,11 @@ def update_W_smooth(X, W, sigma2=16.0):
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     winning_neurons = np.argmin(sq_dists, axis=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
-    ii, jj = np.ogrid[:height, :width]
     # This is what is computed here:
     #   output_sq_dist[i,j,n] = sq-distance of (i,j) from the winning neuron
     #                           coordinates, relative to input n
-    output_sq_dist = (  (ii[..., np.newaxis] - i_win)**2
-                      + (jj[..., np.newaxis] - j_win)**2 )
+    output_sq_dist = (  (self.ii[..., np.newaxis] - i_win)**2
+                      + (self.jj[..., np.newaxis] - j_win)**2 )
     h = np.exp( -0.5 * output_sq_dist / sigma2 )
     # Other choices: Cauchy and Student's t pdfs as neighborhood functions
     #h = 1. / (1. + (output_sq_dist / sigma2)**2)
@@ -218,6 +232,28 @@ def update_W_smooth(X, W, sigma2=16.0):
     if np.any(bad_indices): print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
+
+
+def avg_distortion(X, W, rate=None):
+    """ Compute a full-dataset or a stochastic expectation of the distortion,
+        that is, the distance between a sample x and its reconstruction
+        W[c(x),:].
+    """
+    height, width, max_features = W.shape
+    max_samples, _ = X.shape
+    # If a rate is provided, sample the dataset at random at such rate
+    if rate != None:
+        indices = np.random.randint(0, max_samples, size=int(rate*max_samples))
+        X = X[indices,:]
+    # Compute winning-neuron (BMU) indices for every input
+    sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    winning_neurons = np.argmin(sq_dists, axis=0)
+    # Compute prototype reconstructions for each input
+    reconstructions = W.reshape((-1, max_features))[winning_neurons,:]
+    diff = X - reconstructions
+    # Avg distortion as mean of squared distances of inputs and BMU prototypes
+    reconstruction_errors = batch_dot(diff,diff)
+    return np.mean(reconstruction_errors)
 
 
 def W_PCA_initialization(X, shape=(30, 30)):
@@ -257,9 +293,10 @@ def get_arguments():
                            choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
     optparser.add_argument('-a', '--algorithm', type=str, default='smooth',
-                           choices=('smooth', 'smooth_e', 'indicators',
-                                    'indicators_vc', 'indicators_vc_e'),
-                           help='height and width of the map')
+                           choices=('smooth', 'smooth_e', 'smooth_vc',
+                                    'indicators', 'indicators_vc',
+                                    'indicators_vc_e'),
+                                    help='height and width of the map')
     optparser.add_argument('-d', '--dataset', type=str, default='polygon',
                            choices=('polygon','rings','iris','irisPCA','mnist',
                                     'mnistPCA'),
@@ -268,21 +305,22 @@ def get_arguments():
 
 
 if __name__ == '__main__':
+    # Random seed for testing purposes
     np.random.seed(0)
 
-    algorithms = { 'smooth': update_W_smooth,
-                   'smooth_e': update_W_smooth_e,
-                   'indicators':  update_W_indicators,
-                   # indicators_vc is still WIP
-                   'indicators_vc': update_W_indicators_vc,
+    algorithms = { 'smooth':          update_W_smooth,
+                   'smooth_e':        update_W_smooth_e,
+                   'smooth_vc':       update_W_smooth_vc,
+                   'indicators':      update_W_indicators,
+                   'indicators_vc':   update_W_indicators_vc,
                    'indicators_vc_e': update_W_indicators_vc_e }
 
-    datasets = { 'polygon': dp.polygon_clusters_dataset,
-             'rings': dp.linked_rings_dataset,
-             'iris':  dp.iris_dataset,
-             'irisPCA': dp.iris_dataset_PCA,
-             'mnist': dp.mnist_dataset,
-             'mnistPCA': lambda: dp.mnist_dataset_PCA(dim=100) }
+    datasets = { 'polygon':  dp.polygon_clusters_dataset,
+                 'rings':    dp.linked_rings_dataset,
+                 'iris':     dp.iris_dataset,
+                 'irisPCA':  dp.iris_dataset_PCA,
+                 'mnist':    dp.mnist_dataset,
+                 'mnistPCA': lambda: dp.mnist_dataset_PCA(dim=100) }
 
     args = get_arguments()
     # Self-Organizing Map row and column numbers
@@ -319,12 +357,13 @@ if __name__ == '__main__':
         if args.minibatch and args.minibatch > 0. and args.minibatch <= 1.:
             batch_indices = np.random.randint(max_samples,
                                          size=int(args.minibatch * max_samples))
-            X_train = X[batch_indices, :]
+            X_train = X[batch_indices,:]
         else:
             X_train = X
         W = update_W(X_train, W, sigma2=sigma2(t,T))
         finish = process_time()
-        print('Iteration: %d. Update time: %f sec' % (t, finish-start))
+        print('Iteration: %d. Update time: %.4f sec. Average distortion: %.4f'
+              % (t, finish-start, avg_distortion(X,W)))
 
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
