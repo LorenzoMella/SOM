@@ -5,15 +5,15 @@
 #======================================#
 
 
-import sys  # for command line arguments
 import time
 import numpy as np
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
 import SOM_data_providers as dp
+from sys import version_info
 
 # Use the new process timers if Python version >= 3.3
-py_version, py_subversion = sys.version_info[0:2]
+py_version, py_subversion = version_info[0:2]
 if py_version == 3 and py_subversion >= 3:
     timer = time.process_time
 else:
@@ -81,7 +81,7 @@ def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     #   W_new[i,j,:] = W_new[i,j,:] = eta*h[i,j]*(sample_x - W[i,j,fan_in])
     W_new = W + eta * h[:,:,np.newaxis] * (x - W)
     # NORMALIZATION HERE PRODUCES INTERESTING RESULTS BUT CONFINES
-    # THE PROTOTYPES TO AN K-1-DIM SPHERE
+    # THE PROTOTYPES TO THE PROJECTIVE PLANE (K-1-DIMENSIONAL SPHERE)
     #W_new = W_new / np.sqrt(batch_dot(W_new,W_new))
     return W_new
 
@@ -230,7 +230,7 @@ def get_arguments():
     optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
                                                     'Batch Algorithm Version.')
     optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
-                           help='height and width of the map') 
+                           help='height and width of the map')
     optparser.add_argument('t', '--timesteps', nargs=2, type=int,
                            default=[5000,10000], help='number of iterations')
     optparser.add_argument('i', '--initialization', type=str,
@@ -258,10 +258,10 @@ datasets = { 'polygon': dp.polygon_clusters_dataset,
 if __name__ == '__main__':
     # Uncomment for testing purposes
     np.random.seed(123)
-    
+
     # Retrieve the command-line arguments
     args = get_arguments()
-    
+
     height, width = args.size
     max_steps_so, max_steps_ft = args.timesteps
 
@@ -270,22 +270,22 @@ if __name__ == '__main__':
     eta_f = 0.01
     sigma2_i = ( 0.5 * max(height, width) )**2 # Squared radius of the 2d array
     sigma2_f = 9.
-    
+
     # Learning rates
     eta_so = lambda t, T: eta_i * (eta_f / eta_i)**(t / T)
     eta_ft = lambda t, T: eta_f
-    
+
     # Squared "width" of excitation neighborhoods of the winning neuron
     sigma2_so = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     sigma2_ft = lambda t, T: sigma2_f
-    
+
     compute_scores = compute_sq_distances
     weight_update = weight_update_vec
     optimizer_mode = 'argmin'   # (choose 'argmax' for scalar products)
 
     # Load the data-file into the "design matrix"
     X, labels, dataset_name = datasets[args.dataset]()
-    
+
     max_samples, fan_in = X.shape
     print('Number of examples: %d \nNumber of features: %d\n' % X.shape)
 
@@ -330,7 +330,7 @@ if __name__ == '__main__':
             print('Iteration no. %d. Duration (one update): %.3f ms'
                   % (t, 1000.*(finish - start)))
 
-    
+
 #     Save the matrix as a binary file
 #     filename = ( 'weights_%s_s%d-%d-%d_i%d-%d%s.npy' % (dataset_name,
 #                  height, width, fan_in, max_steps_so, max_steps_ft,
@@ -338,19 +338,19 @@ if __name__ == '__main__':
 #     print('Saving weights as %s' % (filename,))
 #     np.save('weights/%s' % (filename,), W)
 #     print('... done.')
-    
+
     # Visualize the scores on some (10) examples
 #     indices = np.random.randint(0, max_samples, size=10)
 #     plot_examples(indices, compute_scores)
-    
+
     # Visualize the U-Matrix of the network
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
-    
+
     plot_data_and_prototypes(X, W)
     pyplot.show()
-    
+
 #     filename = ( 'fig_%s_s%d-%d-%d_i%d-%d%s.pdf' % (dataset_name,
 #                  height, width, fan_in, max_steps_so, max_steps_ft,
 #                  '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )

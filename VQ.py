@@ -1,8 +1,8 @@
-#############################
-#   Vector Quantization     #
-#                           #
-#   Author: Lorenzo Mella   #
-#############################
+#===============================#
+#      Vector Quantization      #
+#                               #
+#      Author: Lorenzo Mella    #
+#===============================#
 
 
 import numpy as np
