@@ -80,7 +80,12 @@ def update_W_indicators_vc(X, W, sigma2=16.0):
     self = update_W_smooth_vc
     height, width, max_features = W.shape
     if not hasattr(self, 'D2'):
-        # Create a grid of
+        """
+        Create (and store as property) a lattice and compute square distances
+        between any two points of the lattice. The final result is a 4-index
+        array, to be intended like so:
+            D2[i1,j1,i2,j2] == (i1 - i2)**2 + (j1 - j2)**2
+        """
         ii, jj = np.ogrid[:height, :width]
         self.D2 = (  (ii[...,np.newaxis,np.newaxis] - ii)**2
                    + (jj[...,np.newaxis,np.newaxis] - jj)**2 )
@@ -104,7 +109,12 @@ def update_W_smooth_vc(X, W, sigma2=16.0):
     self = update_W_smooth_vc
     height, width, max_features = W.shape
     if not hasattr(self, 'D2'):
-        # Create a grid of
+        """
+        Create (and store as property) a lattice and compute square distances
+        between any two points of the lattice. The final result is a 4-index
+        array, to be intended like so:
+            D2[i1,j1,i2,j2] == (i1 - i2)**2 + (j1 - j2)**2
+        """
         ii, jj = np.ogrid[:height, :width]
         self.D2 = (  (ii[...,np.newaxis,np.newaxis] - ii)**2
                    + (jj[...,np.newaxis,np.newaxis] - jj)**2 )
@@ -138,10 +148,6 @@ def update_W_indicators_vc_e(X, W, sigma2=4.0):
     # Vector sums of datapoints in each Voronoi Cell
     cell_sum_X = sum_cell_e(X, cell_mask)
     # Aggregate the cardinalities of Cells into cardinalities of neighborhoods
-    # THIS MUST BE THE SLOW PART BUT I SUSPECT THAT MASKING OPERATIONS ARE
-    # EXPENSIVE IN GENERAL. SOMETIMES REPEATED COMPUTATIONS IN A COMPACT BLOCK
-    # LEFT TO BLAS ARE EXECUTED FASTER THAN A SEQUENCE OF "CLEVER" PREPROCESSING
-    # IDEAS...
     neigh_cardinality = np.zeros((height, width))
     neigh_sum_X = np.zeros((height, width, max_features))
     for i in range(height):
@@ -301,6 +307,12 @@ def get_arguments():
                            choices=('polygon','rings','iris','irisPCA','mnist',
                                     'mnistPCA'),
                            help='dataset to be analysed')
+    # This is now just for the computation of the average distortion
+    # DOESN'T REALLY WORK DOES IT
+    optparser.add_argument('-v', '--verbose', action='store_true',
+                           dest='verbose', default=False,
+                           help='visualise additional information (e.g., avg '
+                                'distortion')
     return optparser.parse_args()
 
 
@@ -350,6 +362,10 @@ if __name__ == '__main__':
         # Random initialization
         W = np.random.randn(height, width, max_features)
 
+
+    # Simulation
+    print('Dataset size: %d. Dimensionality: %d\nMap shape: (%d, %d)\n'
+          % (max_samples, max_features, height, width))
     for t in range(T):
         start = process_time()
         # In case a minibatch rate is specified, extract a random such sample
@@ -362,12 +378,16 @@ if __name__ == '__main__':
             X_train = X
         W = update_W(X_train, W, sigma2=sigma2(t,T))
         finish = process_time()
-        print('Iteration: %d. Update time: %.4f sec. Average distortion: %.4f'
-              % (t, finish-start, avg_distortion(X,W)))
+        if args.verbose:
+            print('Iteration: %d. Update time: %.4f sec. Average distortion: '
+                  '%.4f' % (t, finish-start, avg_distortion(X,W)))
+        else:
+            print('Iteration: %d. Update time: %.4f sec.'
+                  % (t, finish-start))
 
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
 
-    plot_data_and_prototypes(X, W, draw_data=False)
+    plot_data_and_prototypes(X, W, draw_data=True)
     pyplot.show()
