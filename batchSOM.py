@@ -308,7 +308,6 @@ def get_arguments():
                                     'mnistPCA'),
                            help='dataset to be analysed')
     # This is now just for the computation of the average distortion
-    # DOESN'T REALLY WORK DOES IT
     optparser.add_argument('-v', '--verbose', action='store_true',
                            dest='verbose', default=False,
                            help='visualise additional information (e.g., avg '

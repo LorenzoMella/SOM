@@ -94,11 +94,7 @@ weights are subsequently normalized, there should be no difference between said
 kinds of score.
 """
 def compute_scores_vec(W, x):
-    # Broadcasted scalar products of x with each weight vector
-    # SEE IF THIS CAN BE REDUCED TO COMMON BROADCASTING
-    BX = np.broadcast_to(x, W.shape)
-    # Result is a 2d matrix of scalar products
-    return batch_dot(W, BX)
+    return batch_dot(W, x)
 
 
 def compute_sq_distances(W, x):
@@ -231,12 +227,12 @@ def get_arguments():
                                                     'Batch Algorithm Version.')
     optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
                            help='height and width of the map')
-    optparser.add_argument('t', '--timesteps', nargs=2, type=int,
+    optparser.add_argument('-t', '--timesteps', nargs=2, type=int,
                            default=[5000,10000], help='number of iterations')
-    optparser.add_argument('i', '--initialization', type=str,
+    optparser.add_argument('-i', '--initialization', type=str,
                            choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
-    optparser.add_argument('d', '--dataset', type=str, default='polygon',
+    optparser.add_argument('-d', '--dataset', type=str, default='polygon',
                            choices=('polygon','rings','iris','irisPCA','mnist',
                                     'mnistPCA'),
                            help='dataset to be analysed')
@@ -269,7 +265,7 @@ if __name__ == '__main__':
     eta_i = 0.5
     eta_f = 0.01
     sigma2_i = ( 0.5 * max(height, width) )**2 # Squared radius of the 2d array
-    sigma2_f = 9.
+    sigma2_f = 4.
 
     # Learning rates
     eta_so = lambda t, T: eta_i * (eta_f / eta_i)**(t / T)
