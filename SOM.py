@@ -33,6 +33,20 @@ def batch_dot(a, b):
     return np.sum(a*b, axis=-1)
 
 
+def W_grid_initialization(X, shape=(30, 30)):
+    height, width = shape
+    _, max_features = X.shape
+    ii, jj = np.ogrid[:height, :width]
+    # Sides of the lattice building block
+    unit_y = 2 / (height-1)
+    unit_x = 2 / (width-1)
+    basis = np.eye(max_features)
+    # Mesh construction
+    W = (  (ii*unit_y - 1)[...,np.newaxis] * basis[:,0]
+         + (jj*unit_x - 1)[...,np.newaxis] * basis[:,1] )
+    return W
+
+
 def training_phase(X, W, max_steps, phase_name, eta, sigma2, scoring_f):
     raise NotImplementedError
     print('%s.\n----------------------' % (phase_name,))
@@ -204,18 +218,23 @@ def plot_examples(indices, compute_scores):
         pyplot.set_cmap('jet')
 
 
-def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
+def plot_data_and_prototypes(X, W, BMU, draw_data=True, draw_prototypes=True):
     """ Plots only the first three components of both the data and the
         SOM prototypes
     """
+    height, width, max_features = W.shape
+    assert max_features <= 3
+    # Create the third prototype coordinate depending on dimensionality
+    Z = np.zeros((height, width)) if max_features == 2 else W[...,2]
     fig = pyplot.figure('Prototypes in the Data Space')
     ax = fig.add_subplot(111, projection='3d')
     if draw_prototypes:
-        ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
-        ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
+        ax.plot_wireframe(W[:,:,0], W[:,:,1], Z, linewidth=.3, color='k')
+        ax.scatter(W[:,:,0], W[:,:,1], Z, c='b', marker='.', s=100)
     if draw_data:
-        ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
-    ax.set_axis_off()
+        ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='*', s=25)
+        ax.scatter(sample_x[0], sample_x[1], sample_x[2], c='r', marker='*', s=100)
+    #ax.set_axis_off()
 
 
 def get_arguments():
@@ -225,7 +244,7 @@ def get_arguments():
     import argparse
     optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
                                                     'Batch Algorithm Version.')
-    optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
+    optparser.add_argument('-s', '--size', nargs=2, type=int, default=[3,3],
                            help='height and width of the map')
     optparser.add_argument('-t', '--timesteps', nargs=2, type=int,
                            default=[5000,10000], help='number of iterations')
@@ -233,8 +252,8 @@ def get_arguments():
                            choices=('random', 'data', 'PCA'), default='random',
                            help='type of prototype initialisation')
     optparser.add_argument('-d', '--dataset', type=str, default='polygon',
-                           choices=('polygon','rings','iris','irisPCA','mnist',
-                                    'mnistPCA'),
+                           choices=('point','polygon','rings','iris','irisPCA',
+                                    'mnist','mnistPCA'),
                            help='dataset to be analysed')
     return optparser.parse_args()
 
@@ -243,7 +262,8 @@ def get_arguments():
 #   Simulation   #
 ##################
 
-datasets = { 'polygon': dp.polygon_clusters_dataset,
+datasets = { 'point': lambda: ( np.array([[0,0,5]]), None, None ),
+             'polygon': dp.polygon_clusters_dataset,
              'rings': dp.linked_rings_dataset,
              'iris':  dp.iris_dataset,
              'irisPCA': dp.iris_dataset_PCA,
@@ -280,7 +300,7 @@ if __name__ == '__main__':
     optimizer_mode = 'argmin'   # (choose 'argmax' for scalar products)
 
     # Load the data-file into the "design matrix"
-    X, labels, dataset_name = datasets[args.dataset]()
+    X, labels, _ = datasets[args.dataset]()
 
     max_samples, fan_in = X.shape
     print('Number of examples: %d \nNumber of features: %d\n' % X.shape)
@@ -288,30 +308,31 @@ if __name__ == '__main__':
     # Initialize network weights WORK IN PROGRESS
     if args.initialization == 'random':
         W = np.random.randn(height, width, fan_in)
+    elif args.initialization == 'PCA':
+        from batchSOM import W_PCA_initialization
+        W = W_PCA_initialization(X, shape=(height, width))
+    else:
+        W = W_grid_initialization(X, shape=(height, width))
 
     # Self-organizing phase
     print('Self-organizing phase.\n----------------------')
-    for t in range(max_steps_so):
-        start = timer()
+    for t in range(5000):
         # Draw random input
         sample_x = X[np.random.randint(0,max_samples),:]
+        # Draw the situation
+        if t%200 == 0:
+            plot_data_and_prototypes(X, W, BMU=sample_x)
+            pyplot.show()
         # Compute winning neuron coordinates
         scores = compute_scores(W, sample_x)
         i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
         # Single parameter update
         W = weight_update(W, sample_x, i_win, j_win, eta_so(t,max_steps_so),
                           sigma2_so(t, max_steps_so))
-        finish = timer()
-        if t % 500 == 0:
-            # Avg squared error refers to sq-distance between data-point and
-            # its most responsive ('winning') neuron
-            print('Iteration no. %d. Duration (one update): %.3f ms'
-                  % (t, 1000.*(finish - start)))
-
 
     # Fine-tuning phase
     print('Fine-tuning phase.\n------------------')
-    for t in range(max_steps_ft):
+    for t in range(0):
         start = timer()
         # Draw random input
         sample_x = X[np.random.randint(0,max_samples),:]
@@ -344,7 +365,7 @@ if __name__ == '__main__':
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
 
-    plot_data_and_prototypes(X, W)
+    plot_data_and_prototypes(X, W, BMU=None)
     pyplot.show()
 
 #     filename = ( 'fig_%s_s%d-%d-%d_i%d-%d%s.pdf' % (dataset_name,
