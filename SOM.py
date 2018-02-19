@@ -158,8 +158,8 @@ def compute_sq_distances_elem(W, x):
 #######################################################
 
 def umatrix(W):
-    """Create a U-Matrix (i.e., a map showing how close neighboring units are
-       in the feature space)
+    """ Create a U-Matrix (i.e., a map showing how close neighboring units are
+        in the feature space)
     """
     norm2 = lambda vec: np.linalg.norm(vec, ord=2)
     height, width, _ = W.shape
@@ -179,13 +179,17 @@ def umatrix(W):
     return U
 
 
-def compute_avg_scores(W, X):
-    # Select some 10% of examples at random from X
-    # Compute scores for each (can be most probably done in one stroke...?)
-    # Choose winning neuron for each
-    # Return avg sq-distance between example x and its winning neuron weights
+def pmatrix(X, W):
+    """ Create a P-Matrix (i.e., a map showing data density estimation around
+        each prototype)
+    """
+    height, width, _ = W.shape
     raise NotImplementedError
 
+
+def compute_avg_scores(X, W):
+    from batchSOM import avg_distortion
+    return avg_distortion(X, W, rate=.1)
 
 
 ################
