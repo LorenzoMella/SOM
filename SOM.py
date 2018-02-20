@@ -183,8 +183,27 @@ def pmatrix(X, W):
     """ Create a P-Matrix (i.e., a map showing data density estimation around
         each prototype)
     """
+    max_samples, max_features = X.shape
     height, width, _ = W.shape
-    raise NotImplementedError
+    # Compute the squared size of the data as 2*variance
+    variances = np.var(X, axis=0)
+    assert variances.shape == (max_features,)
+    # The radius is 20% of the size
+    sq_radius = 0.04*(2 * np.max(variances))
+    # Compute all prototype-datapoint squared distances
+    sq_dists = compute_sq_distances(W[...,np.newaxis,:], X)
+    assert sq_dists.shape == (height, width, max_samples)
+    # Return the percentage of datapoints within radius (from each prototype)
+    return np.mean(sq_dists <= sq_radius, axis=-1)
+
+
+def ustarmatrix(X, W):
+    """ Create a U*-Matrix (i.e., a prototype-distance map modulated by the
+        estimated data density)
+    """
+    pmat = pmatrix(X, W)
+    min_pmat = np.min(pmat)
+    return umatrix(W) * (pmat - min_pmat) / (np.mean(pmat) - min_pmat)
 
 
 def compute_avg_scores(X, W):
@@ -219,7 +238,7 @@ def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
         ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
     if draw_data:
         ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
-    ax.set_axis_off()
+    #ax.set_axis_off()
 
 
 def get_arguments():

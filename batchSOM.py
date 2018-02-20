@@ -11,7 +11,8 @@ from time import process_time
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
 from PCA import covariance_eig
-from SOM import batch_dot, umatrix, plot_data_and_prototypes
+from SOM import batch_dot, umatrix, pmatrix, ustarmatrix
+from SOM import plot_data_and_prototypes
 import SOM_data_providers as dp
 from batchSOM_test import *
 
@@ -381,12 +382,22 @@ if __name__ == '__main__':
             print('Iteration: %d. Update time: %.4f sec. Average distortion: '
                   '%.4f' % (t, finish-start, avg_distortion(X,W)))
         else:
-            print('Iteration: %d. Update time: %.4f sec.'
-                  % (t, finish-start))
+            print('Iteration: %d. Update time: %.4f sec.' % (t, finish-start))
 
+    pyplot.figure('U-Matrix')
     pyplot.imshow(umatrix(W))
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
+
+    pyplot.figure('P-Matrix')
+    pyplot.imshow(pmatrix(X, W))
+    pyplot.colorbar()
+    pyplot.set_cmap('Greens')
+
+    pyplot.figure('U*-Matrix')
+    pyplot.imshow(ustarmatrix(X, W))
+    pyplot.colorbar()
+    pyplot.set_cmap('ocean')
 
     plot_data_and_prototypes(X, W, draw_data=True)
     pyplot.show()
