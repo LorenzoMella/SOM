@@ -51,6 +51,7 @@ def iris_dataset_PCA():
     values = principal_components(raw_values, raw_values.shape[1])
     return values, labels, 'iris_PCA'
 
+
 def polygon_clusters_dataset(std=1):
     """ Generate spherically Gaussian distributed clusters of points at the
         vertices of a cube. The common standard deviation of the Gaussian

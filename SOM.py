@@ -229,15 +229,20 @@ def plot_examples(indices, compute_scores):
 
 def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
     """ Plots only the first three components of both the data and the
-        SOM prototypes
+    SOM prototypes. Also works on 2D data (but drawn flat on a 3D plot)
     """
+    height, width, max_features = W.shape
+    # Works only for 3D pictures
+    assert max_features <= 3
+    # Create the third prototype coordinate depending on dimensionality
+    Z = np.zeros((height, width)) if max_features == 2 else W[...,2]
     fig = pyplot.figure('Prototypes in the Data Space')
     ax = fig.add_subplot(111, projection='3d')
-    if draw_prototypes:
-        ax.plot_wireframe(W[:,:,0], W[:,:,1], W[:,:,2], linewidth=.3, color='k')
-        ax.scatter(W[:,:,0], W[:,:,1], W[:,:,2], 'b.', s=25)
     if draw_data:
         ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
+    if draw_prototypes:
+        ax.plot_wireframe(W[:,:,0], W[:,:,1], Z, linewidth=.3, color='k')
+        ax.scatter(W[:,:,0], W[:,:,1], Z, c='b', marker='.', s=100)
     #ax.set_axis_off()
 
 
@@ -287,6 +292,7 @@ if __name__ == '__main__':
     # Initial values of exponentially decreasing parameters
     eta_i = 0.5
     eta_f = 0.01
+
     sigma2_i = ( 0.5 * max(height, width) )**2 # Squared radius of the 2d array
     sigma2_f = 4.
 
