@@ -11,6 +11,7 @@ from os import environ
 
 dataset_archive = '%s/PhD_Datasets' % (environ['HOME'],)
 
+
 def malware_dataset():
     dataset_folder = 'malware-benignware-machine-data'
     filename = 'all_malicious_with_headers.txt'
@@ -77,12 +78,10 @@ def polygon_clusters_dataset(std=1):
     return X, labels, 'polygon'
 
 
-def linked_rings_dataset(std=1):
+def linked_rings_dataset(std=1, samples_per_point = 10, ring_plot_points=100):
     """ The standard deviation std refers to the one of Gaussian points
         extracted around each ideal point of the circumference
     """
-    samples_per_point = 10
-    ring_plot_points = 100
     max_samples_per_ring = samples_per_point * ring_plot_points
     
     radius = 10.2
@@ -95,7 +94,7 @@ def linked_rings_dataset(std=1):
     X_h = ( points_h + offsets ).reshape(max_samples_per_ring, 3)
     labels_h = np.zeros(shape=(max_samples_per_ring,))
     
-    # Horizontal ring
+    # Vertical ring
     points_v = np.vstack((np.cos(angles), np.zeros_like(angles),np.sin(angles)))
     points_v = radius * points_v.T + np.array([0.5 * radius, 0, 0])
     offsets = std * np.random.randn(samples_per_point, ring_plot_points, 3)
