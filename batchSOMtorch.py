@@ -1,31 +1,45 @@
-#===========================================#
-#        SOM - Batch Map version            #
-#                                           #
-#        Author: Lorenzo Mella              #
-#===========================================#
+#================================================#
+#                                                #
+#    SOM - Batch Map - Pytorch Implementation    #
+#                                                #
+#    Author: Lorenzo Mella                       #
+#                                                #
+#================================================#
 
+
+import torch
 
 import numpy as np
 from time import process_time
 
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
-from PCA import covariance_eig
-from SOM import batch_dot, umatrix, pmatrix, ustarmatrix
+from SOM import umatrix, pmatrix, ustarmatrix
 from SOM import plot_data_and_prototypes
 import SOM_data_providers as dp
 from batchSOM_test import *
 
-# Find all the distances between prototypes and data-points
-# The end-result is another 3-array. The first two indices yield the neuron
-# position. The third index spans the distances from said neuron to all
-# datapoints. In other words D[i,j,n] = dist(x[n], w[i,j]).
-# (height, width, fan_in)
-# np.dot(x[n,:] - w[i,j,:], x[n,:] - w[i,j,:])
+
+#######################
+#  Utility Functions  #
+#######################
+
 
 def sq_distances_v(X, W):
-    diff = X - W[..., np.newaxis, :]
-    return np.sum(diff**2, axis=-1)
+    """ Find all the distances between prototypes and data-points
+    The end-result is another 3-array. The first two indices yield the neuron
+    position. The third index spans the distances from said neuron to all
+    datapoints. In other words D[i,j,n] = dist(x[n], w[i,j]).
+    (height, width, fan_in)
+    np.dot(x[n,:] - w[i,j,:], x[n,:] - w[i,j,:])
+    """
+    diff = X - torch.unsqueeze(W, -2)
+    return torch.sum(diff**2, dim=-1)
+
+
+def batch_dot(a, b):
+    assert a.shape == b.shape
+    torch.sum(torch.mul(a, b), dim=-1)
 
 
 def sq_distances_m(X, W):
@@ -33,8 +47,7 @@ def sq_distances_m(X, W):
     """
     height, width, _ = W.shape
     max_samples, _ = X.shape
-    sq_distances = np.empty( shape=(height, width, max_samples),
-                             dtype=np.float64 )
+    sq_distances = torch.empty(sizes=(height, width, max_samples), dtype=torch.float32)
     for i in range(height):
         for j in range(width):
             """
@@ -44,8 +57,8 @@ def sq_distances_m(X, W):
                 diff = X[n,:] - W[i,j,:]
                 sq_distances[i,j,n] = np.dot(diff, diff)
             """
-            diff = X - W[i,j,:]
-            sq_distances[i,j,:] = batch_dot(diff, diff)
+            diff = X - W[i,j]
+            sq_distances[i,j] = batch_dot(diff, diff)
     return sq_distances
 
 
@@ -61,11 +74,11 @@ def voronoi_cells(X, W):
     prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     num_prototypes, _ = prototype_sample_dists.shape
     # For each n find the index p of the closest prototype to X[n,:]
-    closest_prototype = np.argmin(prototype_sample_dists, axis=0)
+    closest_prototype = torch.argmin(prototype_sample_dists, dim=0)
     # Convert each entry of closest_prototypes into an indicator vector of the
     # correct index
-    indexes = np.arange(num_prototypes)
-    mask = np.equal(closest_prototype, indexes[:,np.newaxis])
+    indexes = torch.arange(num_prototypes)
+    mask = torch.eq(closest_prototype, torch.unsqueeze(indexes, -1))
     return mask.reshape(height, width, max_samples)
 
 
@@ -74,34 +87,40 @@ def sum_cell(X, mask):
         is the vector sum of examples X[n,:] that belong to the Voronoi Cell
         of prototype W[i,j,:].
     """
-    return np.dot(mask, X)
+    return torch.dot(mask, X)
+
+
+##############################
+#  Weight Update Algorithms  #
+##############################
 
 
 def update_W_indicators_vc(X, W, sigma2=16.0):
     self = update_W_indicators_vc
     height, width, max_features = W.shape
     if not hasattr(self, 'D2'):
+        from numpy import ogrid, newaxis
         """
         Create (and store as property) a lattice and compute square distances
         between any two points of the lattice. The final result is a 4-index
         array, to be intended like so:
             D2[i1,j1,i2,j2] == (i1 - i2)**2 + (j1 - j2)**2
         """
-        ii, jj = np.ogrid[:height, :width]
-        self.D2 = (  (ii[...,np.newaxis,np.newaxis] - ii)**2
-                   + (jj[...,np.newaxis,np.newaxis] - jj)**2 )
+        ii, jj = ogrid[:height, :width]
+        self.D2 = ((ii[..., newaxis, newaxis] - ii)**2 + (jj[..., newaxis, newaxis] - jj)**2)
+        self.D2 = torch.tensor(self.D2, dtype=torch.float32)
     mask = voronoi_cells(X, W)
-    cell_num_elems = np.sum(mask, axis=-1)
-    cell_sum_X = np.dot(mask, X)
-    h = self.D2 <= sigma2
-    weighted_sum_X = np.dot(h.reshape((height,width,-1)),
-                            cell_sum_X.reshape((-1,max_features)))
-    weight_sum = np.dot(h.reshape((height,width,-1)),
-                        cell_num_elems.reshape((-1,)))
+    cell_num_elems = torch.sum(mask, dim=-1)
+    cell_sum_X = torch.dot(mask, X)
+    h = torch.le(self.D2, sigma2)
+    weighted_sum_X = torch.dot(h.reshape((height,width,-1)), cell_sum_X.reshape((-1,max_features)))
+    weight_sum = torch.dot(h.reshape((height,width,-1)), cell_num_elems.reshape((-1,)))
     # Update weights
-    W_new = np.divide( weighted_sum_X, weight_sum[...,np.newaxis] )
-    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
-    if np.any(bad_indices): print('Possible overflow or division by zero')
+    W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
+    # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
+    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    if bad_indices.any():
+        print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
@@ -110,27 +129,28 @@ def update_W_smooth_vc(X, W, sigma2=16.0):
     self = update_W_smooth_vc
     height, width, max_features = W.shape
     if not hasattr(self, 'D2'):
+        from numpy import ogrid, newaxis
         """
         Create (and store as property) a lattice and compute square distances
         between any two points of the lattice. The final result is a 4-index
         array, to be intended like so:
             D2[i1,j1,i2,j2] == (i1 - i2)**2 + (j1 - j2)**2
         """
-        ii, jj = np.ogrid[:height, :width]
-        self.D2 = (  (ii[...,np.newaxis,np.newaxis] - ii)**2
-                   + (jj[...,np.newaxis,np.newaxis] - jj)**2 )
+        ii, jj = ogrid[:height, :width]
+        self.D2 = ((ii[..., newaxis, newaxis] - ii)**2 + (jj[..., newaxis, newaxis] - jj)**2)
+        self.D2 = torch.tensor(self.D2, dtype=torch.float32)
     mask = voronoi_cells(X, W)
-    cell_num_elems = np.sum(mask, axis=-1)
-    cell_sum_X = np.dot(mask, X)
-    h = np.exp(-0.5 * self.D2 / sigma2)
-    weighted_sum_X = np.dot(h.reshape((height,width,-1)),
-                            cell_sum_X.reshape((-1,max_features)))
-    weight_sum = np.dot(h.reshape((height,width,-1)),
-                        cell_num_elems.reshape((-1,)))
+    cell_num_elems = torch.sum(mask, dim=-1)
+    cell_sum_X = torch.dot(mask, X)
+    h = torch.exp(-0.5 * self.D2 / sigma2)
+    weighted_sum_X = torch.dot(h.reshape((height,width,-1)), cell_sum_X.reshape((-1,max_features)))
+    weight_sum = torch.dot(h.reshape((height,width,-1)), cell_num_elems.reshape((-1,)))
     # Update weights
-    W_new = np.divide( weighted_sum_X, weight_sum[...,np.newaxis] )
-    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
-    if np.any(bad_indices): print('Possible overflow or division by zero')
+    W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
+    # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
+    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    if bad_indices.any():
+        print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
@@ -141,30 +161,33 @@ def update_W_indicators_vc_e(X, W, sigma2=4.0):
     self = update_W_indicators_vc_e
     height, width, max_features = W.shape
     if not hasattr(self, 'ii'):
-        self.ii, self.jj = np.ogrid[:height, :width]
+        from numpy import ogrid
+        self.ii, self.jj = ogrid[:height, :width]
+        self.ii = torch.tensor(self.ii, dtype=torch.float32)
+        self.jj = torch.tensor(self.jj, dtype=torch.float32)
     # Compute matrix whose rows are Voronoi Cell indicators
     cell_mask = voronoi_cells_e(X, W)
     # Compute cardinalities of Voronoi Cells
-    cell_cardinality = np.sum(cell_mask, axis=-1)
+    cell_cardinality = torch.sum(cell_mask, dim=-1)
     # Vector sums of datapoints in each Voronoi Cell
     cell_sum_X = sum_cell_e(X, cell_mask)
     # Aggregate the cardinalities of Cells into cardinalities of neighborhoods
-    neigh_cardinality = np.zeros((height, width))
-    neigh_sum_X = np.zeros((height, width, max_features))
+    neigh_cardinality = torch.zeros(height, width, dtype=torch.long)
+    neigh_sum_X = torch.zeros(sizes=(height, width, max_features), dtype=torch.long)
     for i in range(height):
         for j in range(width):
             # Create a boolean matrix: True iff in a spherical neighborhood
             # of the neuron [i,j]
             neigh_mask = (self.ii - i)**2 + (self.jj - j)**2 <= sigma2
             # Sum selected cardinalities
-            neigh_cardinality[i,j] = np.sum(neigh_mask * cell_cardinality)
-            neigh_sum_X[i,j,:] = np.dot(neigh_mask.reshape((-1,)),
-                                        cell_sum_X.reshape((-1, max_features)))
-    # Update weights (with check for division by zero, in which case the
-    # prototype is not updated)
-    W_new = np.divide( neigh_sum_X, neigh_cardinality[...,np.newaxis] )
-    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
-    if np.any(bad_indices): print('Possible overflow or division by zero')
+            neigh_cardinality[i,j] = torch.sum(neigh_mask * cell_cardinality)
+            neigh_sum_X[i,j,:] = torch.dot(neigh_mask.reshape((-1,)), cell_sum_X.reshape((-1, max_features)))
+    # Update weights
+    W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
+    # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
+    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    if bad_indices.any():
+        print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
@@ -172,53 +195,53 @@ def update_W_indicators_vc_e(X, W, sigma2=4.0):
 def update_W_indicators(X, W, sigma2=16.0):
     max_samples, _ = X.shape
     height, width, max_features = W.shape
-    weighted_sum_X = np.zeros((height, width, max_features))
-    weight_sum = np.zeros((height, width))
+    weighted_sum_X = torch.zeros(height, width, max_features)
+    weight_sum = torch.zeros(height, width)
     # Compute the whole neighborhood function for all winning neurons and
     # all neurons under consideration
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
-    winning_neurons = np.argmin(sq_dists, axis=0)
+    winning_neurons = torch.argmin(sq_dists, dim=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
-    ii, jj = np.ogrid[:height, :width]
-    output_sq_dist = (  (ii[..., np.newaxis] - i_win)**2
-                      + (jj[..., np.newaxis] - j_win)**2 )
-    h = (output_sq_dist <= sigma2)
+    ii, jj = map(lambda arr: torch.tensor(arr, dtype=torch.long), np.ogrid[:height, :width])
+    output_sq_dist = torch.unsqueeze(ii, -1) - i_win)**2 + torch.unsqueeze(jj, -1) - j_win)**2
+    h = output_sq_dist <= sigma2
     # "Matrix" multiplication between h and X weigths the datapoints with their
     # respective neighborhood importance
-    weighted_sum_X = np.dot(h, X)
+    weighted_sum_X = torch.dot(h, X)
     # Just sum the weights themsemves to get the normalization constant
-    weight_sum = np.sum(h, axis=-1)
-    # Tacitly assuming that the denominator is never zero...
-    W_new = np.divide( weighted_sum_X, weight_sum[:,:,np.newaxis] )
-    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
-    if np.any(bad_indices): print('Possible overflow or division by zero')
+    weight_sum = torch.sum(h, dim=-1)
+    # Update weights
+    W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
+    # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
+    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    if bad_indices.any():
+        print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
 
 def update_W_smooth(X, W, sigma2=16.0):
-    from scipy.stats import t
     self = update_W_smooth
     max_samples, _ = X.shape
     height, width, max_features = W.shape
     if not hasattr(self, 'ii'):
-        self.ii, self.jj = np.ogrid[:height, :width]
-    weighted_sum_X = np.zeros((height, width, max_features))
-    weight_sum = np.zeros((height, width))
-    # Compute the whole neighborhood function for all winning neurons and
-    # all neurons under consideration
+        from numpy import ogrid
+        self.ii, self.jj = ogrid[:height, :width]
+        self.ii = torch.tensor(self.ii, dtype=torch.float32)
+        self.jj = torch.tensor(self.jj, dtype=torch.float32)
+    weighted_sum_X = torch.zeros((height, width, max_features))
+    weight_sum = torch.zeros((height, width))
+    # Compute the whole neighborhood function for all winning neurons
+    # and all neurons under consideration
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
-    winning_neurons = np.argmin(sq_dists, axis=0)
+    winning_neurons = torch.argmin(sq_dists, dim=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
     # This is what is computed here:
     #   output_sq_dist[i,j,n] = sq-distance of (i,j) from the winning neuron
     #                           coordinates, relative to input n
-    output_sq_dist = (  (self.ii[..., np.newaxis] - i_win)**2
-                      + (self.jj[..., np.newaxis] - j_win)**2 )
-    h = np.exp( -0.5 * output_sq_dist / sigma2 )
-    # Other choices: Cauchy and Student's t pdfs as neighborhood functions
-    #h = 1. / (1. + (output_sq_dist / sigma2)**2)
-    #h = t(sigma2).pdf(np.sqrt(output_sq_dist))
+    output_sq_dist = ((torch.unsqueeze(self.ii, -1) - i_win)**2 +
+                      (torch.unsqueeze(self.jj, -1) - j_win)**2)
+    h = torch.exp( -0.5 * output_sq_dist / sigma2 )
     """
     We are compactly computing:
 
@@ -230,13 +253,15 @@ def update_W_smooth(X, W, sigma2=16.0):
     """
     # "Matrix" multiplication between h and X weigths the datapoints with their
     # respective neighborhood importance
-    weighted_sum_X = np.dot(h, X)
+    weighted_sum_X = torch.dot(h, X)
     # Just sum the weights themsemves to get the normalization constant
-    weight_sum = np.sum(h, axis=-1)
-    # Protection against division by zero
-    W_new = np.divide( weighted_sum_X, weight_sum[:,:,np.newaxis] )
-    bad_indices = np.logical_or(np.isnan(W_new), np.isinf(W_new))
-    if np.any(bad_indices): print('Possible overflow or division by zero')
+    weight_sum = torch.sum(h, dim=-1)
+    # Update weights
+    W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
+    # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
+    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    if bad_indices.any():
+        print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
 
@@ -250,37 +275,22 @@ def avg_distortion(X, W, rate=None):
     max_samples, _ = X.shape
     # If a rate is provided, sample the dataset at random at such rate
     if rate != None:
-        indices = np.random.randint(0, max_samples, size=int(rate*max_samples))
+        indices = torch.randint(0, max_samples, size=int(rate*max_samples))
         X = X[indices,:]
     # Compute winning-neuron (BMU) indices for every input
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
-    winning_neurons = np.argmin(sq_dists, axis=0)
+    winning_neurons = torch.argmin(sq_dists, dim=0)
     # Compute prototype reconstructions for each input
     reconstructions = W.reshape((-1, max_features))[winning_neurons,:]
     diff = X - reconstructions
     # Avg distortion as mean of squared distances of inputs and BMU prototypes
     reconstruction_errors = batch_dot(diff,diff)
-    return np.mean(reconstruction_errors)
+    return torch.mean(reconstruction_errors)
 
 
-def W_PCA_initialization(X, shape=(30, 30)):
-    height, width = shape
-    ii, jj = np.ogrid[:height, :width]
-    eigs, eigvs = covariance_eig(X, is_centered=False)
-    # We arrange them according to decreasing eigenvalue moduli (hopefully,
-    # this is done without rewriting data!)
-    eigs = eigs[np.flip(np.argsort(np.absolute(eigs)), axis=0)]
-    eigvs = eigvs[:, np.flip(np.argsort(np.absolute(eigs)), axis=0)]
-    # Compute the half-lengths of the grid and the spanning unit-vectors
-    stds = np.sqrt(eigs[:2])
-    new_basis = eigvs[:,:2]
-    # Sides of the lattice building block
-    unit_y = 2 * stds[0] / (height-1)
-    unit_x = 2 * stds[1] / (width-1)
-    # Mesh construction
-    W = (  (ii*unit_y - stds[0])[...,np.newaxis] * new_basis[:,0]
-         + (jj*unit_x - stds[1])[...,np.newaxis] * new_basis[:,1] )
-    return W
+############################
+#  Script and CLI Parsing  #
+############################
 
 
 def get_arguments():
@@ -288,31 +298,23 @@ def get_arguments():
         options.
     """
     import argparse
-    optparser = argparse.ArgumentParser(description='Self-Organizing Maps - '
-                                                    'Batch Algorithm Version.')
+    optparser = argparse.ArgumentParser(description='Self-Organizing Maps - Batch Algorithm Version.')
     optparser.add_argument('-s', '--size', nargs=2, type=int, default=[40,40],
                            help='height and width of the map')
-    optparser.add_argument('-t', '--timesteps', type=int, default=20,
-                           help='number of iterations')
-    optparser.add_argument('-m', '--minibatch', type=float,
-                           help='size of minibatches (% of dataset)')
-    optparser.add_argument('-i', '--initialization', type=str,
-                           choices=('random', 'data', 'PCA'), default='random',
-                           help='type of prototype initialisation')
+    optparser.add_argument('-t', '--timesteps', type=int, default=20, help='number of iterations')
+    optparser.add_argument('-m', '--minibatch', type=float, help='size of minibatches (% of dataset)')
+    optparser.add_argument('-i', '--initialization', type=str, choices=('random', 'data'),
+                           default='random', help='type of prototype initialisation')
     optparser.add_argument('-a', '--algorithm', type=str, default='smooth',
-                           choices=('smooth', 'smooth_e', 'smooth_vc',
-                                    'indicators', 'indicators_vc',
+                           choices=('smooth', 'smooth_e', 'smooth_vc', 'indicators', 'indicators_vc',
                                     'indicators_vc_e'),
-                                    help='height and width of the map')
+                           help='height and width of the map')
     optparser.add_argument('-d', '--dataset', type=str, default='polygon',
-                           choices=('polygon','rings','iris','irisPCA','mnist',
-                                    'mnistPCA'),
+                           choices=('polygon', 'rings', 'iris', 'irisPCA', 'mnist', 'mnistPCA'),
                            help='dataset to be analysed')
     # This is now just for the computation of the average distortion
-    optparser.add_argument('-v', '--verbose', action='store_true',
-                           dest='verbose', default=False,
-                           help='visualise additional information (e.g., avg '
-                                'distortion')
+    optparser.add_argument('-v', '--verbose', action='store_true', dest='verbose', default=False,
+                           help='visualise additional information (e.g., avg distortion)')
     return optparser.parse_args()
 
 
@@ -352,16 +354,11 @@ if __name__ == '__main__':
     # Initialization of the prototypes spherically at random
     if args.initialization == 'data':
         # As a random choice of datapoints
-        indices = np.random.randint(0, max_samples, size=height * width)
-        W = np.copy(X[indices,:].reshape((height, width, -1)))
-    elif args.initialization == 'PCA':
-        # As a regular flat sheet oriented with the first 2 principal
-        # components of the data
-        W = W_PCA_initialization(X, shape=(height, width))
+        indices = torch.randint(0, max_samples, size=height * width)
+        W = torch.tensor(X[indices,:].reshape((height, width, -1)))
     else:
         # Random initialization
-        W = np.random.randn(height, width, max_features)
-
+        W = torch.randn(height, width, max_features)
 
     # Simulation
     print('Dataset size: %d. Dimensionality: %d\nMap shape: (%d, %d)\n'
@@ -371,16 +368,15 @@ if __name__ == '__main__':
         # In case a minibatch rate is specified, extract a random such sample
         # of the input data
         if args.minibatch and args.minibatch > 0. and args.minibatch <= 1.:
-            batch_indices = np.random.randint(max_samples,
-                                         size=int(args.minibatch * max_samples))
+            batch_indices = torch.randint(0, max_samples, size=int(args.minibatch * max_samples))
             X_train = X[batch_indices,:]
         else:
             X_train = X
-        W = update_W(X_train, W, sigma2=sigma2(t,T))
+        W = update_W(X_train, W, sigma2=sigma2(t, T))
         finish = process_time()
         if args.verbose:
-            print('Iteration: %d. Update time: %.4f sec. Average distortion: '
-                  '%.4f' % (t, finish-start, avg_distortion(X,W)))
+            print('Iteration: %d. Update time: %.4f sec. Average distortion: %.4f' %
+                  (t, finish-start, avg_distortion(X, W)))
         else:
             print('Iteration: %d. Update time: %.4f sec.' % (t, finish-start))
 
