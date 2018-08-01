@@ -39,7 +39,7 @@ def sq_distances_v(X, W):
 
 def batch_dot(a, b):
     assert a.shape == b.shape
-    torch.sum(torch.mul(a, b), dim=-1)
+    return torch.sum(torch.mul(a, b), dim=-1)
 
 
 def sq_distances_m(X, W):
@@ -47,7 +47,7 @@ def sq_distances_m(X, W):
     """
     height, width, _ = W.shape
     max_samples, _ = X.shape
-    sq_distances = torch.empty(sizes=(height, width, max_samples), dtype=torch.float32)
+    sq_distances = torch.empty(size=(height, width, max_samples), dtype=torch.float32)
     for i in range(height):
         for j in range(width):
             """
@@ -87,7 +87,7 @@ def sum_cell(X, mask):
         is the vector sum of examples X[n,:] that belong to the Voronoi Cell
         of prototype W[i,j,:].
     """
-    return torch.dot(mask, X)
+    return torch.matmul(mask, X)
 
 
 ##############################
@@ -148,7 +148,7 @@ def update_W_smooth_vc(X, W, sigma2=16.0):
     # Update weights
     W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
     # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
-    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    bad_indices = torch.isnan(W_new).any() or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
     if bad_indices.any():
         print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
@@ -203,7 +203,7 @@ def update_W_indicators(X, W, sigma2=16.0):
     winning_neurons = torch.argmin(sq_dists, dim=0)
     i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
     ii, jj = map(lambda arr: torch.tensor(arr, dtype=torch.long), np.ogrid[:height, :width])
-    output_sq_dist = torch.unsqueeze(ii, -1) - i_win)**2 + torch.unsqueeze(jj, -1) - j_win)**2
+    output_sq_dist = (torch.unsqueeze(ii, -1) - i_win)**2 + (torch.unsqueeze(jj, -1) - j_win)**2
     h = output_sq_dist <= sigma2
     # "Matrix" multiplication between h and X weigths the datapoints with their
     # respective neighborhood importance
@@ -227,21 +227,23 @@ def update_W_smooth(X, W, sigma2=16.0):
     if not hasattr(self, 'ii'):
         from numpy import ogrid
         self.ii, self.jj = ogrid[:height, :width]
-        self.ii = torch.tensor(self.ii, dtype=torch.float32)
-        self.jj = torch.tensor(self.jj, dtype=torch.float32)
-    weighted_sum_X = torch.zeros((height, width, max_features))
-    weight_sum = torch.zeros((height, width))
+        self.ii = torch.tensor(self.ii, dtype=torch.long)
+        self.jj = torch.tensor(self.jj, dtype=torch.long)
+    weighted_sum_X = torch.zeros(height, width, max_features)
+    weight_sum = torch.zeros(height, width)
     # Compute the whole neighborhood function for all winning neurons
     # and all neurons under consideration
     sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
     winning_neurons = torch.argmin(sq_dists, dim=0)
-    i_win, j_win = np.unravel_index(winning_neurons, dims=(height, width))
+    print('winning_neurons type = %s' % winning_neurons.dtype)
+    i_win = winning_neurons / width
+    j_win =winning_neurons % width
     # This is what is computed here:
     #   output_sq_dist[i,j,n] = sq-distance of (i,j) from the winning neuron
     #                           coordinates, relative to input n
-    output_sq_dist = ((torch.unsqueeze(self.ii, -1) - i_win)**2 +
-                      (torch.unsqueeze(self.jj, -1) - j_win)**2)
-    h = torch.exp( -0.5 * output_sq_dist / sigma2 )
+    output_sq_dist = torch.tensor((torch.unsqueeze(self.ii, -1) - i_win)**2 +
+                                  (torch.unsqueeze(self.jj, -1) - j_win)**2, dtype=torch.float32)
+    h = torch.exp(-0.5 * output_sq_dist / sigma2)
     """
     We are compactly computing:
 
@@ -253,13 +255,14 @@ def update_W_smooth(X, W, sigma2=16.0):
     """
     # "Matrix" multiplication between h and X weigths the datapoints with their
     # respective neighborhood importance
-    weighted_sum_X = torch.dot(h, X)
+    print('h.shape = %s, X.shape = %s' % (h.shape, X.shape))
+    weighted_sum_X = torch.matmul(h, X)
     # Just sum the weights themsemves to get the normalization constant
     weight_sum = torch.sum(h, dim=-1)
     # Update weights
     W_new = torch.div(weighted_sum_X, torch.unsqueeze(weight_sum, -1))
     # Issue a warning on NaNs and keep the previous (not Nan) values of W at those indices
-    bad_indices = torch.isnan(W_new) or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
+    bad_indices = torch.isnan(W_new).any() or W_new.eq(float('inf')).any() or W_new.eq(float('-inf')).any()
     if bad_indices.any():
         print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
@@ -349,6 +352,8 @@ if __name__ == '__main__':
     sigma2 = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
     # Dataset initialization
     X, labels, _ = datasets[args.dataset]()
+    X = torch.tensor(X, dtype=torch.float32)
+    labels = torch.tensor(labels, dtype=torch.long)
     max_samples, max_features = X.shape
 
     # Initialization of the prototypes spherically at random
@@ -385,15 +390,15 @@ if __name__ == '__main__':
     pyplot.colorbar()
     pyplot.set_cmap('plasma')
 
-    pyplot.figure('P-Matrix')
-    pyplot.imshow(pmatrix(X, W))
-    pyplot.colorbar()
-    pyplot.set_cmap('Greens')
+    # pyplot.figure('P-Matrix')
+    # pyplot.imshow(pmatrix(X, W))
+    # pyplot.colorbar()
+    # pyplot.set_cmap('Greens')
 
-    pyplot.figure('U*-Matrix')
-    pyplot.imshow(ustarmatrix(X, W))
-    pyplot.colorbar()
-    pyplot.set_cmap('ocean')
+    # pyplot.figure('U*-Matrix')
+    # pyplot.imshow(ustarmatrix(X, W))
+    # pyplot.colorbar()
+    # pyplot.set_cmap('ocean')
 
-    plot_data_and_prototypes(X, W, draw_data=True)
+    plot_data_and_prototypes(np.array(X), np.array(W), draw_data=True)
     pyplot.show()
