@@ -1,20 +1,25 @@
-#===========================================#
-#        SOM - Batch Map version            #
-#                                           #
-#        Author: Lorenzo Mella              #
-#===========================================#
+#################################
+#                               #
+#    SOM - Batch Map version    #
+#                               #
+#    Author: Lorenzo Mella      #
+#                               #
+#################################
 
 
+# Library imports
 import numpy as np
 from time import process_time
-
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
+
+# Project imports
 from PCA import covariance_eig
-from SOM import batch_dot, umatrix, pmatrix, ustarmatrix
-from SOM import plot_data_and_prototypes
+from SOM_utils import *
+from SOM_draw import umatrix, pmatrix, ustarmatrix, plot_data_and_prototypes
 import SOM_data_providers as dp
 from batchSOM_test import *
+
 
 # Find all the distances between prototypes and data-points
 # The end-result is another 3-array. The first two indices yield the neuron
@@ -22,31 +27,6 @@ from batchSOM_test import *
 # datapoints. In other words D[i,j,n] = dist(x[n], w[i,j]).
 # (height, width, fan_in)
 # np.dot(x[n,:] - w[i,j,:], x[n,:] - w[i,j,:])
-
-def sq_distances_v(X, W):
-    diff = X - W[..., np.newaxis, :]
-    return np.sum(diff**2, axis=-1)
-
-
-def sq_distances_m(X, W):
-    """ For some reason this is considerably faster than the v version...
-    """
-    height, width, _ = W.shape
-    max_samples, _ = X.shape
-    sq_distances = np.empty( shape=(height, width, max_samples),
-                             dtype=np.float64 )
-    for i in range(height):
-        for j in range(width):
-            """
-            The content of this scope has been tested as equivalent to the more
-            understandable:
-            for n in range(max_samples):
-                diff = X[n,:] - W[i,j,:]
-                sq_distances[i,j,n] = np.dot(diff, diff)
-            """
-            diff = X - W[i,j,:]
-            sq_distances[i,j,:] = batch_dot(diff, diff)
-    return sq_distances
 
 
 def voronoi_cells(X, W):
@@ -239,28 +219,6 @@ def update_W_smooth(X, W, sigma2=16.0):
     if np.any(bad_indices): print('Possible overflow or division by zero')
     W_new[bad_indices] = W[bad_indices]
     return W_new
-
-
-def avg_distortion(X, W, rate=None):
-    """ Compute a full-dataset or a stochastic expectation of the distortion,
-        that is, the distance between a sample x and its reconstruction
-        W[c(x),:].
-    """
-    height, width, max_features = W.shape
-    max_samples, _ = X.shape
-    # If a rate is provided, sample the dataset at random at such rate
-    if rate != None:
-        indices = np.random.randint(0, max_samples, size=int(rate*max_samples))
-        X = X[indices,:]
-    # Compute winning-neuron (BMU) indices for every input
-    sq_dists = sq_distances_m(X, W).reshape((-1, max_samples))
-    winning_neurons = np.argmin(sq_dists, axis=0)
-    # Compute prototype reconstructions for each input
-    reconstructions = W.reshape((-1, max_features))[winning_neurons,:]
-    diff = X - reconstructions
-    # Avg distortion as mean of squared distances of inputs and BMU prototypes
-    reconstruction_errors = batch_dot(diff,diff)
-    return np.mean(reconstruction_errors)
 
 
 def W_PCA_initialization(X, shape=(30, 30)):

@@ -12,11 +12,11 @@ from os import environ
 dataset_archive = '%s/PhD_Datasets' % (environ['HOME'],)
 
 
-def malware_dataset():
+def malware_dataset(dtype=np.float32):
     dataset_folder = 'malware-benignware-machine-data'
     filename = 'all_malicious_with_headers.txt'
     x_df = ps.read_csv("%s/%s/%s" % (dataset_archive, dataset_folder, filename),
-                       delimiter=',')
+                       delimiter=',', dtype=dtype)
     col_labels = x_df.axes[1]
     # Drop irrelevant features (including class label for now!)
     # and the 14-th faux column
@@ -29,11 +29,11 @@ def malware_dataset():
     return x_df.values, labels, 'malware'
 
 
-def iris_dataset():
+def iris_dataset(dtype=np.float32):
     dataset_folder = 'iris'
     filename = 'bezdekIris.data'
     x_df = ps.read_csv("%s/%s/%s" % (dataset_archive, dataset_folder, filename),
-                       delimiter=',')
+                       delimiter=',', dtype=dtype)
     # Save and remove labels
     col_labels = x_df.axes[1]
     labels = x_df.as_matrix(columns=[col_labels[-1]])
@@ -46,9 +46,9 @@ def iris_dataset():
     return x_df.values, labels, 'iris'
 
 
-def iris_dataset_PCA():
+def iris_dataset_PCA(dtype=np.float32):
     from PCA import principal_components
-    raw_values, labels, _ = iris_dataset()
+    raw_values, labels, _ = iris_dataset(dtype=dtype)
     values = principal_components(raw_values, raw_values.shape[1])
     return values, labels, 'iris_PCA'
 
@@ -107,28 +107,28 @@ def linked_rings_dataset(std=1, samples_per_point = 10, ring_plot_points=100):
     return X, labels, 'linked_rings'
 
 
-def mnist_dataset():
+def mnist_dataset(dtype=np.float32):
     """ Works with all MNIST (vanilla) files (training and test).
         
         Returns:
         -------
-        ndarray (dtype=numpy.float64)
+        ndarray
     """
     dataset_folder = 'MNIST'
     # Fetch the input data
     filename = 'train-images-idx3-ubyte'
     images_path = '%s/%s/%s' % (dataset_archive, dataset_folder, filename)
-    X = extract_idx(images_path)
+    X = extract_idx(images_path, dtype=dtype)
     # The input data is pre-normalized between 0 and 1
     X = X.reshape((X.shape[0], -1)) / 256.
     # Fetch the labels
     filename = 'train-labels-idx1-ubyte'
     labels_path = '%s/%s/%s' % (dataset_archive, dataset_folder, filename)
-    labels = extract_idx(labels_path)
+    labels = extract_idx(labels_path, dtype=np.long)
     return X, labels, 'MNIST'
 
 
-def extract_idx(path):
+def extract_idx(path, dtype=np.float32):
     # System endianness: byteorder in ['big', 'little'].
     # The vanilla MNIST files are all big-endian.
     from sys import byteorder
@@ -152,22 +152,22 @@ def extract_idx(path):
     # Luckily, the greyscale levels are expressed as unsigned bytes:
     # no byteswap needed!
     X = np.fromfile(fp, dtype=np.uint8, count=max_elements)
-    # Data is converted to float64, put in table format
-    X = X.reshape(sizes).astype(np.float64)
+    # Data is converted to the requested data-type, put in table format
+    X = X.reshape(sizes).astype(dtype)
     fp.close()
     return X
 
 
-def mnist_dataset_PCA(dim=None):
+def mnist_dataset_PCA(dim=None, dtype=np.float32):
     """ Same as mnist_dataset but the data is represented as the first dim
         principal components (all if dim is None or an unreasonable value
         
         Returns:
         -------
-        ndarray (dtype=numpy.float64)
+        ndarray
     """
     from PCA import principal_components
-    X_raw, labels, _ = mnist_dataset()
+    X_raw, labels, _ = mnist_dataset(dtype=dtype)
     max_features = X_raw.shape[1]
     # If not specified, use the same dimensionality as the original data
     if dim == None or dim < 0 or dim > max_features:

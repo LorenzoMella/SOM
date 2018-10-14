@@ -1,16 +1,23 @@
-#======================================#
-#        Self-Organizing Maps          #
-#                                      #
-#        Author: Lorenzo Mella         #
-#======================================#
+###############################
+#                             #
+#    Self-Organizing Maps     #
+#                             #
+#    Author: Lorenzo Mella    #
+#                             #
+###############################
 
 
+# Library imports
 import time
+from sys import version_info
 import numpy as np
 from matplotlib import pyplot
-from mpl_toolkits.mplot3d import Axes3D
+
+# Project imports
 import SOM_data_providers as dp
-from sys import version_info
+from SOM_utils import *
+from SOM_draw import *
+
 
 # Use the new process timers if Python version >= 3.3
 py_version, py_subversion = version_info[0:2]
@@ -19,18 +26,10 @@ if py_version == 3 and py_subversion >= 3:
 else:
     timer = time.clock
 
-############################################
-# Utility functions and global parameters  #
-############################################
 
-
-def batch_dot(a, b):
-    """Array of dot products over the fastest axis of two arrays. Precisely,
-       assuming that a and b have K+1 matching axes,
-       batch_dot(a, b)[i1, ..., iK] = a[i1, ..., iK, :].dot(b[i1, ..., iK, :])
-    """
-    assert a.shape == b.shape
-    return np.sum(a*b, axis=-1)
+###############################
+#  Training Phase Algorithms  #
+###############################
 
 
 def training_phase(X, W, max_steps, phase_name, eta, sigma2, scoring_f):
@@ -86,22 +85,6 @@ def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     return W_new
 
 
-"""
-Scores are used to compare the neuronal responses to an input x. Not the best
-choice of name, but the neuron with the lowest score wins. Examples of scores
-are squared distances (between weights w and x) or inner products w*x. If the
-weights are subsequently normalized, there should be no difference between said
-kinds of score.
-"""
-def compute_scores_vec(W, x):
-    return batch_dot(W, x)
-
-
-def compute_sq_distances(W, x):
-    diff = W - x
-    return batch_dot(diff, diff)
-
-
 def winning_neuron(scores, mode='argmin'):
     assert mode in ['argmin', 'argmax']
     find_optimum = np.argmin if mode == 'argmin' else np.argmax
@@ -131,119 +114,9 @@ def weight_update_elem(W, x, i_win, j_win, eta, sigma2):
     return W_new
 
 
-# Elementary versions of scoring functions for testing. They are more
-# transparent; it's easier to see they do the right thing. Very slow though.
-# SHOULD BE PUT IN A TESTING MODULE!
-def compute_scores_elem(W, x):
-    max_rows, max_cols, fan_in = W.shape
-    scores = np.zeros(shape=[max_rows, max_cols])
-    for i in range(max_rows):
-        for j in range(max_cols):
-            scores[i,j] = np.dot(W[i,j,:], x)
-    return scores
-
-
-def compute_sq_distances_elem(W, x):
-    max_rows, max_cols, fan_in = W.shape
-    dists = np.zeros(shape=[max_rows, max_cols])
-    for i in range(max_rows):
-        for j in range(max_cols):
-            diff = W[i,j,:] - x
-            dists[i,j] = np.dot(diff, diff)
-    return dists
-
-
-#######################################################
-#   Clustering and performance assessment functions   #
-#######################################################
-
-def umatrix(W):
-    """ Create a U-Matrix (i.e., a map showing how close neighboring units are
-        in the feature space)
-    """
-    norm2 = lambda vec: np.linalg.norm(vec, ord=2)
-    height, width, _ = W.shape
-    U = np.empty(shape=(height, width))
-    for i in range(height):
-        for j in range(width):
-            # Distances of unit from neighbors on East, South etc.
-            # (0 if there is no neighboring unit in that direction)
-            de = 0 if j == width-1 else norm2(W[i,j,:] - W[i,j+1,:])
-            ds = 0 if i == height-1 else norm2(W[i,j,:] - W[i+1,j,:])
-            dw = 0 if j == 0 else norm2(W[i,j,:] - W[i,j-1,:])
-            dn = 0 if i == 0 else norm2(W[i,j,:] - W[i-1,j,:])
-            # Number of neighbors of a unit: normally 4 but could be 3 or 2
-            # if the unit is on the border or a corner
-            num_neighs = (i != 0) + (j != 0) + (i != height) + (j != width)
-            U[i,j] = (de+ds+dw+dn) / num_neighs
-    return U
-
-
-def pmatrix(X, W):
-    """ Create a P-Matrix (i.e., a map showing data density estimation around
-        each prototype)
-    """
-    max_samples, max_features = X.shape
-    height, width, _ = W.shape
-    # Compute the squared size of the data as 2*variance
-    variances = np.var(X, axis=0)
-    assert variances.shape == (max_features,)
-    # The radius is 20% of the size
-    sq_radius = 0.04*(2 * np.max(variances))
-    # Compute all prototype-datapoint squared distances
-    sq_dists = compute_sq_distances(W[...,np.newaxis,:], X)
-    assert sq_dists.shape == (height, width, max_samples)
-    # Return the percentage of datapoints within radius (from each prototype)
-    return np.mean(sq_dists <= sq_radius, axis=-1)
-
-
-def ustarmatrix(X, W):
-    """ Create a U*-Matrix (i.e., a prototype-distance map modulated by the
-        estimated data density)
-    """
-    pmat = pmatrix(X, W)
-    min_pmat = np.min(pmat)
-    return umatrix(W) * (pmat - min_pmat) / (np.mean(pmat) - min_pmat)
-
-
-def compute_avg_scores(X, W):
-    from batchSOM import avg_distortion
-    return avg_distortion(X, W, rate=.1)
-
-
-################
-#   Plotting   #
-################
-
-def plot_examples(indices, compute_scores):
-    for idx in indices:
-        sample_x = X[idx, :]
-        sample_label = labels[idx]
-        scores = compute_scores(W, sample_x)
-        pyplot.figure()
-        pyplot.title(str(sample_label))
-        pyplot.imshow(scores)
-        pyplot.colorbar()
-        pyplot.set_cmap('jet')
-
-
-def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True):
-    """ Plots only the first three components of both the data and the
-    SOM prototypes. Also works on 2D data (but drawn flat on a 3D plot)
-    """
-    height, width, max_features = W.shape
-    # Works only for 3D pictures
-    assert max_features <= 3
-    # Create the third prototype coordinate depending on dimensionality
-    Z = np.zeros((height, width)) if max_features == 2 else W[...,2]
-    fig = pyplot.figure('Prototypes in the Data Space')
-    ax = fig.add_subplot(111, projection='3d')
-    if draw_data:
-        ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
-    if draw_prototypes:
-        ax.plot_wireframe(W[:,:,0], W[:,:,1], Z, linewidth=.3, color='k')
-        ax.scatter(W[:,:,0], W[:,:,1], Z, c='b', marker='.', s=100)
-    #ax.set_axis_off()
+##################
+#   Simulation   #
+##################
 
 
 def get_arguments():
@@ -266,10 +139,6 @@ def get_arguments():
                            help='dataset to be analysed')
     return optparser.parse_args()
 
-
-##################
-#   Simulation   #
-##################
 
 datasets = { 'polygon': dp.polygon_clusters_dataset,
              'rings': dp.linked_rings_dataset,
