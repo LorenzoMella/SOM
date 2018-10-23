@@ -13,7 +13,7 @@ from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
 
 # Project imports
-from SOM_utils import compute_sq_distances, avg_distortion
+from SOM_utils import compute_sq_distances, avg_distortion, sq_distances_m
 
 
 #############
@@ -44,14 +44,14 @@ def umatrix(W):
         for j in range(width):
             # Distances of unit from neighbors on East, South etc.
             # (0 if there is no neighboring unit in that direction)
-            de = 0 if j == width-1 else norm2(W[i,j,:] - W[i,j+1,:])
-            ds = 0 if i == height-1 else norm2(W[i,j,:] - W[i+1,j,:])
-            dw = 0 if j == 0 else norm2(W[i,j,:] - W[i,j-1,:])
-            dn = 0 if i == 0 else norm2(W[i,j,:] - W[i-1,j,:])
+            de = 0 if j == width-1 else norm2(W[i, j, :] - W[i, j + 1, :])
+            ds = 0 if i == height-1 else norm2(W[i, j, :] - W[i + 1, j, :])
+            dw = 0 if j == 0 else norm2(W[i, j, :] - W[i, j - 1, :])
+            dn = 0 if i == 0 else norm2(W[i, j, :] - W[i -1, j, :])
             # Number of neighbors of a unit: normally 4 but could be 3 or 2
             # if the unit is on the border or a corner
             num_neighs = (i != 0) + (j != 0) + (i != height) + (j != width)
-            U[i,j] = (de+ds+dw+dn) / num_neighs
+            U[i, j] = (de+ds+dw+dn) / num_neighs
     return U
 
 
@@ -67,7 +67,7 @@ def pmatrix(X, W):
     # The radius is 20% of the size
     sq_radius = 0.04*(2 * np.max(variances))
     # Compute all prototype-datapoint squared distances
-    sq_dists = compute_sq_distances(W[...,np.newaxis,:], X)
+    sq_dists = compute_sq_distances(W[..., np.newaxis, :], X)
     assert sq_dists.shape == (height, width, max_samples)
     # Return the percentage of datapoints within radius (from each prototype)
     return np.mean(sq_dists <= sq_radius, axis=-1)
@@ -84,6 +84,44 @@ def ustarmatrix(X, W):
 
 def mumatrix(X, W):
     raise NotImplementedError
+
+
+def conn_matrix(X, W):
+    RF_matrix = RF_count(X, W)#.reshape(height * width, height * width)
+    return RF_matrix + RF_matrix.T#.reshape(height, width, height, width)
+
+
+def RF_count(X, W):
+    """ Returned array shape = (height, width, height, width)
+    or, alternatively, ``linearized'' (height * width, height * width).
+    """
+    # Compute sq_distances
+    # Find BMUs per sample
+    # Replace values at BMU locations in sq_distances with large float value
+    # Recompute BMUs: now what is found are the second BMUs
+    # ... but do we really need these?
+    raise NotImplementedError
+
+
+def bmus_and_sbmus(X, W):
+    """ Returns two arrays: one is a list of best-matching units for each
+    datapoint. The second is a list of second-best-matching units.
+    """
+    max_samples, _ = X.shape
+    height, width, _ = W.shape
+    # Build a matrix whose [p,n] entry is the sq_distance between p-th
+    # prototype (linearized order) and the n-th datapoint
+    prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    num_prototypes, _ = prototype_sample_dists.shape
+    # For each n find the index p of the closest prototype to X[n,:]
+    bmus = np.argmin(prototype_sample_dists, axis=0)
+    # Hack: replace the distance values thus found with Inf
+    # making them de facto invisible to argmin
+    for n, idx in enumerate(bmus):
+        prototype_sample_dists[idx, n] = np.inf
+    # With the modified values, argmin now yields the SBMUS!
+    sbmus = np.argmin(prototype_sample_dists, axis=0)
+    return bmus, sbmus
 
 
 ##############
@@ -111,13 +149,13 @@ def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True, axis_on
     # Works only for 3D pictures
     assert max_features <= 3
     # Create the third prototype coordinate depending on dimensionality
-    Z = np.zeros((height, width)) if max_features == 2 else W[...,2]
+    Z = np.zeros((height, width)) if max_features == 2 else W[..., 2]
     fig = pyplot.figure('Prototypes in the Data Space')
     ax = fig.add_subplot(111, projection='3d')
     if draw_data:
-        ax.scatter(X[:,0], X[:,1], X[:,2], c='r', marker='.', s=25)
+        ax.scatter(X[:, 0], X[:, 1], X[:, 2], c='r', marker='.', s=25)
     if draw_prototypes:
-        ax.plot_wireframe(W[:,:,0], W[:,:,1], Z, linewidth=.3, color='k')
-        ax.scatter(W[:,:,0], W[:,:,1], Z, c='b', marker='.', s=100)
+        ax.plot_wireframe(W[:, :, 0], W[:, :, 1], Z, linewidth=.3, color='k')
+        ax.scatter(W[:, :, 0], W[:, :, 1], Z, c='b', marker='.', s=100)
     if not axis_on:
         ax.set_axis_off()

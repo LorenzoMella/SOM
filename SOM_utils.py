@@ -7,10 +7,13 @@
 #################################################
 
 
+from numba import jit, njit
 import numpy as np
+
 
 # SPECIAL PYTORCH VERSIONS SHOULD ALSO BE INCLUDED
 
+@njit
 def batch_dot(a, b):
     """Array of dot products over the fastest axis of two arrays. Precisely,
        assuming that a and b have K+1 matching axes,
@@ -26,9 +29,7 @@ are squared distances (between weights w and x) or inner products w*x. If the
 weights are subsequently normalized, there should be no difference between said
 kinds of score.
 """
-def compute_scores_vec(W, x):
-    return batch_dot(W, x)
-
+compute_scores_vec = batch_dot
 
 def compute_sq_distances(W, x):
     diff = W - x
@@ -49,6 +50,16 @@ def compute_scores_elem(W, x):
 
 
 def compute_sq_distances_elem(W, x):
+    """ Computes the distances between all prototypes and a single datapoint x
+    using a non-vectorized algorithm. For checking correctness of sq_distances_v.
+    
+    Parameters:
+    W (ndarray: (height, width, max_features)): the prototypes
+    x (ndarray: (max_features,)): the datapoint
+
+    Returns:
+    (ndarray: (height, width)): a matrix of distances
+    """
     max_rows, max_cols, fan_in = W.shape
     dists = np.zeros(shape=[max_rows, max_cols])
     for i in range(max_rows):
@@ -59,27 +70,80 @@ def compute_sq_distances_elem(W, x):
 
 
 def sq_distances_v(X, W):
+    """ Computes the distances between all prototypes and a single datapoint x
+    Vectorized version.
+    
+    Parameters:
+    W (ndarray: (height, width, max_features)): the prototypes
+    x (ndarray: (max_features,)): the datapoint
+
+    Returns:
+    (ndarray: (height, width)): a matrix of distances
+    """
     diff = X - W[..., np.newaxis, :]
     return np.sum(diff**2, axis=-1)
 
 
-def sq_distances_m(X, W):
-    """ For some reason this is considerably faster than the v version...
+@jit(nopython=True, fastmath=True)
+def sq_distances_elem(X, W):
+    """ Computes the distances between all prototypes and a single datapoint x
+    Partially vectorized version.
+    
+    Notes:
+        Fastest thus far. The speed here is likely to be caused by the
+        computation arrangement: ndarray objects contain row-major C arrays,
+        and the computations are all performed iterating on the fastest axes first.
+        No copies should therefore be involved in this process.
+    
+    Args:
+        W (ndarray): the  prototypes.
+              shape: (height, width, max_features)
+        X (ndarray): the datapoints.
+              shape: (max_samples, max_features)
+
+    Returns:
+        (ndarray): an array of distances per lattice position.
+        shape: (height, width, max_samples)
     """
-    assert W.dtype == W.dtype
+    #assert X.dtype == W.dtype
+    height, width, _ = W.shape
+    max_samples, max_features = X.shape
+    sq_distances = np.zeros(shape=(max_samples, height, width), dtype=X.dtype)
+    for n in range(max_samples):
+        for i in range(height):
+            for j in range(width):
+                for f in range(max_features):
+                    diff = X[n, f] - W[i, j, f]
+                    sq_distances[n, i, j] += diff * diff
+    return np.transpose(sq_distances, (1, 2, 0))
+
+
+def sq_distances_m(X, W):
+    """ Computes the distances between all prototypes and a single datapoint x
+    Partially vectorized version.
+    
+    Notes:
+        Fastest thus far. The speed here is likely to be caused by the
+        computation arrangement: ndarray objects contain row-major C arrays,
+        and the computations are all performed iterating on the fastest axes first.
+        No copies should therefore be involved in this process.
+    
+    Args:
+        W (ndarray): the  prototypes.
+              shape: (height, width, max_features)
+        x (ndarray): the datapoint.
+              shape: (max_features,)
+
+    Returns:
+        (ndarray): a matrix of distances.
+        shape: (height, width)
+    """
+    #assert X.dtype == W.dtype
     height, width, _ = W.shape
     max_samples, _ = X.shape
-    sq_distances = np.empty(shape=(height, width, max_samples),
-                            dtype=X.dtype)
+    sq_distances = np.empty(shape=(height, width, max_samples), dtype=X.dtype)
     for i in range(height):
         for j in range(width):
-            """
-            The content of this scope has been tested as equivalent to the more
-            understandable:
-            for n in range(max_samples):
-                diff = X[n,:] - W[i,j,:]
-                sq_distances[i,j,n] = np.dot(diff, diff)
-            """
             diff = X - W[i,j,:]
             sq_distances[i,j,:] = batch_dot(diff, diff)
     return sq_distances
@@ -105,3 +169,35 @@ def avg_distortion(X, W, rate=None):
     # Avg distortion as mean of squared distances of inputs and BMU prototypes
     reconstruction_errors = batch_dot(diff,diff)
     return np.mean(reconstruction_errors)
+
+
+#############
+#  Testing  #
+#############
+
+
+def test_timer(func, trials=10, with_dry_run=True):
+    total_timelapse = 0.
+    if with_dry_run:
+        func()
+    for t in range(trials):
+        start = process_time()
+        func()
+        end = process_time()
+        total_timelapse += end - start
+    return total_timelapse / trials
+
+
+def SOM_utils_run_tests():
+    """Test suite---mainly timings of the distance function variants.
+    """
+    X = np.random.randn(1000, 100)
+    W = np.random.randn(50, 50, 100)
+    print('sq_distances_v', test_timer(lambda: sq_distances_v(X, W), trials=15))
+    print('sq_distances_m', test_timer(lambda: sq_distances_m(X, W), trials=15))
+    print('sq_distances_elem', test_timer(lambda: sq_distances_elem(X, W), trials=15))    
+
+
+if __name__ == '__main__':
+    from time import process_time
+    SOM_utils_run_tests()
