@@ -7,19 +7,21 @@
 #################################################
 
 
-from numba import jit, njit
+# Library Imports
+from numba import jit
 import numpy as np
+# Project imports
+from SOM_test_common import test_timer
 
 
-# SPECIAL PYTORCH VERSIONS SHOULD ALSO BE INCLUDED
-
-@njit
+@jit(nopython=True)
 def batch_dot(a, b):
     """Array of dot products over the fastest axis of two arrays. Precisely,
        assuming that a and b have K+1 matching axes,
        batch_dot(a, b)[i1, ..., iK] = a[i1, ..., iK, :].dot(b[i1, ..., iK, :])
+
     """
-    assert a.shape == b.shape
+    # assert a.shape == b.shape # not understood by numba
     return np.sum(a*b, axis=-1)
 
 """
@@ -29,9 +31,9 @@ are squared distances (between weights w and x) or inner products w*x. If the
 weights are subsequently normalized, there should be no difference between said
 kinds of score.
 """
-compute_scores_vec = batch_dot
+compute_scores_v = batch_dot
 
-def compute_sq_distances(W, x):
+def compute_sq_distances_v(W, x):
     diff = W - x
     return batch_dot(diff, diff)
 
@@ -39,6 +41,7 @@ def compute_sq_distances(W, x):
 # Elementary versions of scoring functions for testing. They are more
 # transparent; it's easier to see they do the right thing, despite being slow.
 # To be used for comparison with the BLAS-based versions.
+
 
 def compute_scores_elem(W, x):
     max_rows, max_cols, fan_in = W.shape
@@ -49,11 +52,12 @@ def compute_scores_elem(W, x):
     return scores
 
 
-def compute_sq_distances_elem(W, x):
-    """ Computes the distances between all prototypes and a single datapoint x
+@jit(nopython=True)
+def compute_sq_distances_m(W, x):
+    """Computes the distances between all prototypes and a single datapoint x
     using a non-vectorized algorithm. For checking correctness of sq_distances_v.
     
-    Parameters:
+    Args:
     W (ndarray: (height, width, max_features)): the prototypes
     x (ndarray: (max_features,)): the datapoint
 
@@ -61,7 +65,7 @@ def compute_sq_distances_elem(W, x):
     (ndarray: (height, width)): a matrix of distances
     """
     max_rows, max_cols, fan_in = W.shape
-    dists = np.zeros(shape=[max_rows, max_cols])
+    dists = np.zeros(shape=(max_rows, max_cols))
     for i in range(max_rows):
         for j in range(max_cols):
             diff = W[i,j,:] - x
@@ -69,16 +73,39 @@ def compute_sq_distances_elem(W, x):
     return dists
 
 
-def sq_distances_v(X, W):
-    """ Computes the distances between all prototypes and a single datapoint x
-    Vectorized version.
+@jit(nopython=True, fastmath=True)  # fastmath works
+def compute_sq_distances_elem(W, x):
+    """Computes the distances between all prototypes and a single datapoint x
+    using a non-vectorized algorithm. For checking correctness of sq_distances_v.
     
-    Parameters:
+    Args:
     W (ndarray: (height, width, max_features)): the prototypes
     x (ndarray: (max_features,)): the datapoint
 
     Returns:
     (ndarray: (height, width)): a matrix of distances
+    """
+    max_rows, max_cols, max_features = W.shape
+    dists = np.zeros(shape=(max_rows, max_cols))
+    for i in range(max_rows):
+        for j in range(max_cols):
+            for f in range(max_features):
+                diff = W[i, j, f] - x[f]
+                dists[i, j] += diff * diff
+    return dists
+
+
+def sq_distances_v(X, W):
+    """ Computes the distances between all prototypes and a single datapoint x.
+    Vectorized version.
+    
+    Parameters:
+    W (ndarray): the prototypes. shape=(height, width, max_features).
+    x (ndarray): the datapoint. shape=(max_features,).
+
+    Returns:
+    (ndarray): a matrix of distances. shape=(height, width).
+
     """
     diff = X - W[..., np.newaxis, :]
     return np.sum(diff**2, axis=-1)
@@ -150,9 +177,10 @@ def sq_distances_m(X, W):
 
 
 def avg_distortion(X, W, rate=None):
-    """ Compute a full-dataset or a stochastic expectation of the distortion,
-        that is, the distance between a sample x and its reconstruction
-        W[c(x),:].
+    """Compute a full-dataset or a stochastic expectation of the distortion,
+    that is, the distance between a sample x and its reconstruction
+    W[c(x),:].
+
     """
     height, width, max_features = W.shape
     max_samples, _ = X.shape
@@ -176,28 +204,20 @@ def avg_distortion(X, W, rate=None):
 #############
 
 
-def test_timer(func, trials=10, with_dry_run=True):
-    total_timelapse = 0.
-    if with_dry_run:
-        func()
-    for t in range(trials):
-        start = process_time()
-        func()
-        end = process_time()
-        total_timelapse += end - start
-    return total_timelapse / trials
-
-
 def SOM_utils_run_tests():
     """Test suite---mainly timings of the distance function variants.
     """
     X = np.random.randn(1000, 100)
     W = np.random.randn(50, 50, 100)
-    print('sq_distances_v', test_timer(lambda: sq_distances_v(X, W), trials=15))
-    print('sq_distances_m', test_timer(lambda: sq_distances_m(X, W), trials=15))
-    print('sq_distances_elem', test_timer(lambda: sq_distances_elem(X, W), trials=15))    
+    print('sq_distances_v %.6f sec' % test_timer(lambda: sq_distances_v(X, W), trials=15))
+    print('sq_distances_m %.6f sec' % test_timer(lambda: sq_distances_m(X, W), trials=15))
+    print('sq_distances_elem %.6f sec' % test_timer(lambda: sq_distances_elem(X, W), trials=15))
+    print('compute_sq_distances_v %.6f sec'%
+          test_timer(lambda: compute_sq_distances_v(W, X[0]), trials=30))
+    print('compute_sq_distances_m %.6f sec' %
+          test_timer(lambda: compute_sq_distances_m(W, X[0]), trials=30))
+    print('compute_sq_distances_elem %.6f sec' %
+          test_timer(lambda: compute_sq_distances_elem(W, X[0]), trials=30))
+    
 
-
-if __name__ == '__main__':
-    from time import process_time
-    SOM_utils_run_tests()
+if __name__ == '__main__': SOM_utils_run_tests()

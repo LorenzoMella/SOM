@@ -8,12 +8,14 @@
 
 
 # Library imports
-import numpy as np
 from matplotlib import pyplot
 from mpl_toolkits.mplot3d import Axes3D
-
+from numba import jit, float64
+import numpy as np
+import torch
 # Project imports
-from SOM_utils import compute_sq_distances, avg_distortion, sq_distances_m
+from SOM_test_common import test_timer
+from SOM_utils import compute_sq_distances_elem, avg_distortion, sq_distances_m, sq_distances_elem
 
 
 #############
@@ -51,7 +53,37 @@ def umatrix(W):
             # Number of neighbors of a unit: normally 4 but could be 3 or 2
             # if the unit is on the border or a corner
             num_neighs = (i != 0) + (j != 0) + (i != height) + (j != width)
-            U[i, j] = (de+ds+dw+dn) / num_neighs
+            U[i, j] = (de + ds + dw + dn) / num_neighs
+    return U
+
+
+@jit(nopython=True)
+def norm_elem(vec):
+    result = 0.
+    for i in range(vec.shape[0]):
+        result += vec[i]
+    return result ** .5
+
+
+@jit(nopython=True)
+def umatrix_elem(W):
+    """ Create a U-Matrix (i.e., a map showing how close neighboring units are
+        in the feature space)
+    """
+    height, width, _ = W.shape
+    U = np.empty(shape=(height, width))
+    for i in range(height):
+        for j in range(width):
+            # Distances of unit from neighbors on East, South etc.
+            # (0 if there is no neighboring unit in that direction)
+            de = 0 if j == width - 1 else norm_elem(W[i, j, :] - W[i, j + 1, :])
+            ds = 0 if i == height - 1 else norm_elem(W[i, j, :] - W[i + 1, j, :])
+            dw = 0 if j == 0 else norm_elem(W[i, j, :] - W[i, j - 1, :])
+            dn = 0 if i == 0 else norm_elem(W[i, j, :] - W[i -1, j, :])
+            # Number of neighbors of a unit: normally 4 but could be 3 or 2
+            # if the unit is on the border or a corner
+            num_neighs = (i != 0) + (j != 0) + (i != height) + (j != width)
+            U[i, j] = (de + ds + dw + dn) / num_neighs
     return U
 
 
@@ -124,6 +156,57 @@ def bmus_and_sbmus(X, W):
     return bmus, sbmus
 
 
+def bmus_and_sbmus_torch(X, W):
+    """Returns two arrays: one is a list of best-matching units for each
+    datapoint. The second is a list of second-best-matching units.
+    Torch version.
+
+    """
+    max_samples, _ = X.sizes
+    height, width, _ = W.sizes
+    # Build a matrix whose [p,n] entry is the sq_distance between p-th
+    # prototype (linearized order) and the n-th datapoint
+    prototype_sample_dists = sq_distances_m(X, W).reshape((-1, max_samples))
+    num_prototypes, _ = prototype_sample_dists.sizes
+    # For each n find the index p of the closest prototype to X[n,:]
+    bmus = torch.argmin(prototype_sample_dists, dim=0)
+    # Hack: replace the distance values thus found with Inf
+    # making them de facto invisible to argmin
+    for n, idx in enumerate(bmus):
+        prototype_sample_dists[idx, n] = np.inf
+    # With the modified values, argmin now yields the SBMUS!
+    sbmus = torch.argmin(prototype_sample_dists, dim=0)
+    return bmus, sbmus
+
+
+@jit((float64[:, :], float64[:, :, :]), nopython=True)
+def bmus_and_sbmus_numba(X, W):
+    """ Returns two arrays: one is a list of best-matching units for each
+    datapoint. The second is a list of second-best-matching units.
+    """
+    max_samples, _ = X.shape
+    height, width, _ = W.shape
+    # Build a matrix whose [idx, n] entry is the sq_distance between idx-th
+    # prototype (linearized order) and the n-th datapoint
+    max_prototypes = height * width
+    prototype_sample_dists = sq_distances_elem(X, W).reshape((max_prototypes, max_samples))
+    # For each n find the index idx of the closest prototype to X[n,:]
+    bmus = np.zeros((max_prototypes,))
+    for i in range(max_prototypes):
+        sqdists = prototype_sample_dists[i]
+        bmus[i] = np.argmin(sqdists)
+    # Hack: replace the distance values thus found with Inf,
+    # making them de facto invisible to argmin
+    for n, i in enumerate(bmus):
+        prototype_sample_dists[i, n] = np.inf
+    # With the modified values, argmin now yields the SBMUS!
+    sbmus = np.zeros((max_prototypes,))
+    for i in range(max_prototypes):
+        sqdists = prototype_sample_dists[i]
+        sbmus[i] = np.argmin(sqdists)
+    #return bmus, sbmus
+
+
 ##############
 #  Plotting  #
 ##############
@@ -159,3 +242,17 @@ def plot_data_and_prototypes(X, W, draw_data=True, draw_prototypes=True, axis_on
         ax.scatter(W[:, :, 0], W[:, :, 1], Z, c='b', marker='.', s=100)
     if not axis_on:
         ax.set_axis_off()
+
+
+
+def main():
+    X = np.random.randn(1000, 80)
+    W = np.random.randn(50, 50, 80)
+    print('umatrix: %s sec.' % test_timer(lambda: umatrix(W), with_dry_run=True))
+    print('umatrix_elem: %s sec.' % test_timer(lambda: umatrix_elem(W), with_dry_run=True))
+    print('bmus_and_sbmus: %s sec.' %
+          test_timer(lambda: bmus_and_sbmus(X, W), with_dry_run=True))
+    print('bmus_and_sbmus_numba: %s sec.' %
+          test_timer(lambda: bmus_and_sbmus_numba(X, W), with_dry_run=True))
+
+if __name__ == '__main__': main()

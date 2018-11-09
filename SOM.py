@@ -8,15 +8,15 @@
 
 
 # Library imports
-import time
-from sys import version_info
-import numpy as np
 from matplotlib import pyplot
-
+from numba import jit
+import numpy as np
+from sys import version_info
+import time
 # Project imports
 import SOM_data_providers as dp
-from SOM_utils import *
 from SOM_draw import *
+from SOM_utils import *
 
 
 # Use the new process timers if Python version >= 3.3
@@ -32,40 +32,35 @@ else:
 ###############################
 
 
-def training_phase(X, W, max_steps, phase_name, eta, sigma2, scoring_f):
-    raise NotImplementedError
-    print('%s.\n----------------------' % (phase_name,))
-    for t in range(max_steps):
+def training_phase(X, W, max_steps, phase_name, eta, sigma2, scoring_f, optimizer_mode, verbose=False):
+    if verbose:
         start = timer()
-        # Draw random input
+        print('%s.\n----------------------' % phase_name)
+    for t in range(max_steps):
         sample_x = X[np.random.randint(0,X.shape[0]), :]
-        # Compute winning neuron coordinates
         scores = scoring_f(W, sample_x)
         i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-        # Single parameter update
         W = weight_update(W, sample_x, i_win, j_win, eta(t,max_steps),
                           sigma2(t, max_steps))
+    if verbose:
         finish = timer()
         if t % 500 == 0:
-            # Avg squared error refers to sq-distance between data-point and
-            # its most responsive ('winning') neuron
             print('Iteration no. %d. Duration (one update): %.3f ms'
-                  % (t, 1000.*(finish - start)))
-        return W
+                  % (t, 1000. * (finish - start)))
+    return W
 
 
 def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     """Single weight update for the online SOM algorithm
     """
-    # Derive all useful dimensions from W
     height, width, fan_in = W.shape
     assert x.size == fan_in
     # Create the meshgrid if required
     if not hasattr(weight_update_vec, 'mesh_i'):
-        weight_update.mesh_i, weight_update.mesh_j = np.ogrid[:height,:width]
+        weight_update_vec.mesh_i, weight_update_vec.mesh_j = np.ogrid[:height, :width]
     # Compute all neuron squared distances from the winning neuron
-    D2 = ( (weight_update_vec.mesh_i - i_win)**2
-         + (weight_update_vec.mesh_j - j_win)**2 )
+    D2 = ((weight_update_vec.mesh_i - i_win) ** 2 +
+          (weight_update_vec.mesh_j - j_win) ** 2)
     # Use the squared distances to compute the neighborhood function
     h = np.exp(-0.5 * D2 / sigma2)
     # Update all the weights.
@@ -78,7 +73,7 @@ def weight_update_vec(W, x, i_win, j_win, eta, sigma2):
     # The resulting algorithm is like doing, for all i,j,
     #
     #   W_new[i,j,:] = W_new[i,j,:] = eta*h[i,j]*(sample_x - W[i,j,fan_in])
-    W_new = W + eta * h[:,:,np.newaxis] * (x - W)
+    W_new = W + eta * h[:, :, np.newaxis] * (x - W)
     # NORMALIZATION HERE PRODUCES INTERESTING RESULTS BUT CONFINES
     # THE PROTOTYPES TO THE PROJECTIVE PLANE (K-1-DIMENSIONAL SPHERE)
     #W_new = W_new / np.sqrt(batch_dot(W_new,W_new))
@@ -140,15 +135,14 @@ def get_arguments():
     return optparser.parse_args()
 
 
-datasets = { 'polygon': dp.polygon_clusters_dataset,
-             'rings': dp.linked_rings_dataset,
-             'iris':  dp.iris_dataset,
-             'irisPCA': dp.iris_dataset_PCA,
-             'mnist': dp.mnist_dataset,
-             'mnistPCA': lambda: dp.mnist_dataset_PCA(dim=100) }
+def main():
+    datasets = {'polygon': dp.polygon_clusters_dataset,
+                'rings': dp.linked_rings_dataset,
+                'iris':  dp.iris_dataset,
+                'irisPCA': dp.iris_dataset_PCA,
+                'mnist': dp.mnist_dataset,
+                'mnistPCA': lambda: dp.mnist_dataset_PCA(dim=100)}
 
-
-if __name__ == '__main__':
     # Uncomment for testing purposes
     np.random.seed(123)
 
@@ -162,15 +156,15 @@ if __name__ == '__main__':
     eta_i = 0.5
     eta_f = 0.01
 
-    sigma2_i = ( 0.5 * max(height, width) )**2 # Squared radius of the 2d array
+    sigma2_i = (0.5 * max(height, width)) ** 2 # Squared radius of the 2d array
     sigma2_f = 4.
 
     # Learning rates
-    eta_so = lambda t, T: eta_i * (eta_f / eta_i)**(t / T)
+    eta_so = lambda t, T: eta_i * (eta_f / eta_i) ** (t / T)
     eta_ft = lambda t, T: eta_f
 
     # Squared "width" of excitation neighborhoods of the winning neuron
-    sigma2_so = lambda t, T: sigma2_i * (sigma2_f / sigma2_i)**(t / T)
+    sigma2_so = lambda t, T: sigma2_i * (sigma2_f / sigma2_i) ** (t / T)
     sigma2_ft = lambda t, T: sigma2_f
 
     compute_scores = compute_sq_distances
@@ -188,48 +182,18 @@ if __name__ == '__main__':
         W = np.random.randn(height, width, fan_in)
 
     # Self-organizing phase
-    print('Self-organizing phase.\n----------------------')
-    for t in range(max_steps_so):
-        start = timer()
-        # Draw random input
-        sample_x = X[np.random.randint(0,max_samples),:]
-        # Compute winning neuron coordinates
-        scores = compute_scores(W, sample_x)
-        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-        # Single parameter update
-        W = weight_update(W, sample_x, i_win, j_win, eta_so(t,max_steps_so),
-                          sigma2_so(t, max_steps_so))
-        finish = timer()
-        if t % 500 == 0:
-            # Avg squared error refers to sq-distance between data-point and
-            # its most responsive ('winning') neuron
-            print('Iteration no. %d. Duration (one update): %.3f ms'
-                  % (t, 1000.*(finish - start)))
-
+    W = training_phase(X, W, max_steps_so, 'Self-organizing phase', eta_so, sigma2_so,
+                       scoring_f=compute_scores, optimizer_mode=optimizer_mode, verbose=True)
 
     # Fine-tuning phase
-    print('Fine-tuning phase.\n------------------')
-    for t in range(max_steps_ft):
-        start = timer()
-        # Draw random input
-        sample_x = X[np.random.randint(0,max_samples),:]
-        # Compute winning neuron coordinates
-        scores = compute_scores(W, sample_x)
-        i_win, j_win = winning_neuron(scores, mode=optimizer_mode)
-        # Single parameter update
-        W = weight_update(W, sample_x, i_win, j_win, eta_ft(t, max_steps_ft),
-                          sigma2_ft(t, max_steps_ft))
-        finish = timer()
-        if t % 500 == 0:
-            print('Iteration no. %d. Duration (one update): %.3f ms'
-                  % (t, 1000.*(finish - start)))
-
+    W = training_phase(X, W, max_steps_ft, 'Fine-tuning phase', eta_ft, sigma2_ft,
+                       scoring_f=compute_scores, optimizer_mode=optimizer_mode, verbose=True)
 
 #     Save the matrix as a binary file
 #     filename = ( 'weights_%s_s%d-%d-%d_i%d-%d%s.npy' % (dataset_name,
 #                  height, width, fan_in, max_steps_so, max_steps_ft,
 #                  '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
-#     print('Saving weights as %s' % (filename,))
+#     print('Saving weights as %s' % filename)
 #     np.save('weights/%s' % (filename,), W)
 #     print('... done.')
 
@@ -249,3 +213,6 @@ if __name__ == '__main__':
 #                  height, width, fan_in, max_steps_so, max_steps_ft,
 #                  '' if len(sys.argv) < 4 or sys.argv[3] != 'dot' else '_dot') )
 #     pyplot.savefig('figs/%s' % (filename,), format='pdf')
+
+
+if __name__ == '__main__': main()

@@ -55,8 +55,8 @@ def sq_distances_m(X, W):
                 diff = X[n,:] - W[i,j,:]
                 sq_distances[i,j,n] = np.dot(diff, diff)
             """
-            diff = X - W[i,j]
-            sq_distances[i,j] = batch_dot(diff, diff)
+            diff = X - W[i, j]
+            sq_distances[i, j] = batch_dot(diff, diff)
     return sq_distances
 
 
