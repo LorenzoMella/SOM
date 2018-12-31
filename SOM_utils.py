@@ -146,7 +146,7 @@ def sq_distances_elem(X, W):
 
 
 def sq_distances_m(X, W):
-    """ Computes the distances between all prototypes and a single datapoint x
+    """ Computes the distances between all prototypes and a batch of datapoints.
     Partially vectorized version.
     
     Notes:
